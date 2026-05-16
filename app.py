@@ -25,6 +25,10 @@ def load_data():
     url = f"{base_url}&_={cache_buster}"
     df = pd.read_csv(url)
     
+    # 🌟【新規追加】台番号が「平均」となっている行を除外
+    df = df[df['台番号'].astype(str) != '平均']
+    
+    # 前処理（数値変換）
     df['G数'] = pd.to_numeric(df['G数'].astype(str).str.replace(",", ""), errors='coerce').fillna(0).astype(int)
     df['差枚'] = pd.to_numeric(df['差枚'].astype(str).str.replace("+", "").str.replace(",", ""), errors='coerce').fillna(0).astype(int)
     df['BB'] = pd.to_numeric(df['BB'], errors='coerce').fillna(0).astype(int)
@@ -99,7 +103,6 @@ exclude_condition = (
 )
 recommendations = recommendations[~exclude_condition]
 
-# 🌟 変更点：.head(7) を削除し、条件をクリアしたすべての台を表示するようにしました
 result_display = recommendations[[
     '台番号', '明日勝つ確率(%)', '7日間合計', 
     'BB', 'RB', '合成確率_表示用', '差枚', 
@@ -149,7 +152,7 @@ for index, row in result_display.iterrows():
     chart_data = pd.DataFrame({'日別差枚': history_diff}, index=date_labels)
     chart_data['累積差枚'] = chart_data['日別差枚'].cumsum()
     
-    with st.expander(f"📊 台番号 {machine_no} の詳細トレンド", expanded=False): # 🌟 たくさん表示されるため、最初はグラフを閉じておく設定にしました
+    with st.expander(f"📊 台番号 {machine_no} の詳細トレンド", expanded=False):
         col1, col2 = st.columns([1, 3])
         with col1:
             st.metric("予測勝率", f"{row['勝率%']}%")
