@@ -103,10 +103,11 @@ latest_df['明日勝つ確率(%)'] = model.predict_proba(latest_df[features])[:,
 
 recommendations = latest_df.sort_values('明日勝つ確率(%)', ascending=False)
 
-# 🌟【足切りルール強化】直近（当日・前日）で+1000枚以上、または過去7日間合計が+2000枚以上の台は強制除外
+# 🌟【足切りルールさらに強化】直近（当日・前日・前々日）で+1000枚以上、または過去7日間合計が+2000枚以上の台は強制除外
 exclude_condition = (
     (recommendations['差枚'] >= 1000) | 
     (recommendations['1日前の差枚'] >= 1000) | 
+    (recommendations['2日前の差枚'] >= 1000) |  # 👈 ここに「前々日」を追加しました！
     (recommendations['7日間合計'] >= 2000)
 )
 recommendations = recommendations[~exclude_condition]
@@ -139,7 +140,8 @@ result['勝率%'] = result['勝率%'].round(1)
 
 # 表示
 st.subheader(f"📅 予測基準日: {latest_date.strftime('%Y-%m-%d')}")
-st.info("💡 【安全運用中】直近（当日・前日）で+1000枚以上、または過去7日間合計（7日計）が+2000枚以上の台はリスク回避のため強制除外しています。")
+# 🌟 青いインフォメーション枠の文言も「前々日」に合わせて変更しました！
+st.info("💡 【安全運用中】直近（当日・前日・前々日）で+1000枚以上、または過去7日間合計（7日計）が+2000枚以上の台はリスク回避のため強制除外しています。")
 
 # アプリ画面に綺麗な表を描画
 st.dataframe(result, use_container_width=True, hide_index=True)
