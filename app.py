@@ -25,7 +25,6 @@ def load_data():
     url = f"{base_url}&_={cache_buster}"
     df = pd.read_csv(url)
     
-    # 前処理（数値変換）
     df['G数'] = pd.to_numeric(df['G数'].astype(str).str.replace(",", ""), errors='coerce').fillna(0).astype(int)
     df['差枚'] = pd.to_numeric(df['差枚'].astype(str).str.replace("+", "").str.replace(",", ""), errors='coerce').fillna(0).astype(int)
     df['BB'] = pd.to_numeric(df['BB'], errors='coerce').fillna(0).astype(int)
@@ -33,7 +32,6 @@ def load_data():
     
     df['合成確率_表示用'] = df['合成確率'].astype(str)
     
-    # 確率データの分母だけを抽出
     df['BB確率'] = pd.to_numeric(df['BB確率'].astype(str).str.replace("1/", ""), errors='coerce').fillna(0.0)
     df['RB確率'] = pd.to_numeric(df['RB確率'].astype(str).str.replace("1/", ""), errors='coerce').fillna(0.0)
     df['合成確率'] = pd.to_numeric(df['合成確率'].astype(str).str.replace("1/", ""), errors='coerce').fillna(0.0)
@@ -55,23 +53,18 @@ df['警戒日'] = df['日'].apply(lambda x: 1 if 10 <= x <= 20 else 0)
 corner_list = [521, 540, 541, 560]
 df['角台'] = df['台番号'].isin(corner_list).astype(int)
 
-# 過去7日間の履歴
 for i in range(1, 8):
     df[f'{i}日前の差枚'] = df.groupby('台番号')['差枚'].shift(i).fillna(0)
 
-# 1日前、2日前のボーナス情報
 df['1日前のBB'] = df.groupby('台番号')['BB'].shift(1).fillna(0).astype(int)
 df['1日前のRB'] = df.groupby('台番号')['RB'].shift(1).fillna(0).astype(int)
 df['1日前の合成_表示用'] = df.groupby('台番号')['合成確率_表示用'].shift(1).fillna('-')
-
-# 1日前のRB確率も計算して持たせておく
 df['1日前のRB確率'] = df.groupby('台番号')['RB確率'].shift(1).fillna(0.0)
 
 df['2日前のBB'] = df.groupby('台番号')['BB'].shift(2).fillna(0).astype(int)
 df['2日前のRB'] = df.groupby('台番号')['RB'].shift(2).fillna(0).astype(int)
 df['2日前の合成_表示用'] = df.groupby('台番号')['合成確率_表示用'].shift(2).fillna('-')
 
-# 7日間合計（本日＋過去6日）
 df['7日間合計'] = df['差枚'] + df['1日前の差枚'] + df['2日前の差枚'] + df['3日前の差枚'] + df['4日前の差枚'] + df['5日前の差枚'] + df['6日前の差枚']
 
 df['V字回復候補'] = df['1日前の差枚'].apply(lambda x: 1 if -4000 <= x <= -2500 else 0)
@@ -96,9 +89,6 @@ latest_df = df[df['日付'] == latest_date].copy()
 latest_df['明日勝つ確率(%)'] = model.predict_proba(latest_df[features])[:, 1] * 100
 recommendations = latest_df.sort_values('明日勝つ確率(%)', ascending=False)
 
-# 🌟【足切りルール強化】
-# 1. 直近3日間で+1000以上、または7日間合計+2000以上を除外
-# 2. 本日または前日のRB確率が「1/310.0」より良い台を除外
 exclude_condition = (
     (recommendations['差枚'] >= 1000) | 
     (recommendations['1日前の差枚'] >= 1000) | 
@@ -109,13 +99,13 @@ exclude_condition = (
 )
 recommendations = recommendations[~exclude_condition]
 
-# テーブル表示用のデータ整形
+# 🌟 変更点：.head(7) を削除し、条件をクリアしたすべての台を表示するようにしました
 result_display = recommendations[[
     '台番号', '明日勝つ確率(%)', '7日間合計', 
     'BB', 'RB', '合成確率_表示用', '差枚', 
     '1日前のBB', '1日前のRB', '1日前の合成_表示用', '1日前の差枚', 
     '2日前のBB', '2日前のRB', '2日前の合成_表示用', '2日前の差枚'
-]].head(7).copy()
+]].copy()
 
 result_display = result_display.rename(columns={
     '明日勝つ確率(%)': '勝率%', '7日間合計': '7日計', '合成確率_表示用': '合成',
@@ -124,15 +114,13 @@ result_display = result_display.rename(columns={
 })
 result_display['勝率%'] = result_display['勝率%'].round(1)
 
-# メイン画面表示
 st.subheader(f"📅 予測基準日: {latest_date.strftime('%Y-%m-%d')}")
-st.info("💡 【安全運用中】直近3日間（当日・前日・前々日）で+1000枚以上、または過去7日間合計が+2000枚以上の台を除外しています。\n\n⚠️ 【高設定不発狙い除外】本日または前日のRB確率が1/310.0より良い高設定挙動の台もリスク回避のため除外対象としています。")
+st.info(f"💡 【安全運用中】厳しい条件をクリアした **{len(result_display)}台** をピックアップしています。\n\n⚠️ 【除外ルール】直近3日間で+1000枚以上 / 7日計+2000枚以上 / 本日または前日のRB確率が1/310.0より良い台")
 
 st.dataframe(result_display, use_container_width=True, hide_index=True)
 
-# 🌟 個別台の7日間推移グラフ（累積差枚追加）
 st.markdown("---")
-st.subheader("📈 オススメ台の7日間トレンド（波）")
+st.subheader("📈 条件クリア台の詳細トレンド（波）")
 
 date_labels = [
     (latest_date - pd.Timedelta(days=6)).strftime('%m/%d'),
@@ -158,18 +146,13 @@ for index, row in result_display.iterrows():
         target_machine_data['差枚']
     ]
     
-    chart_data = pd.DataFrame({
-        '日別差枚': history_diff
-    }, index=date_labels)
-    
+    chart_data = pd.DataFrame({'日別差枚': history_diff}, index=date_labels)
     chart_data['累積差枚'] = chart_data['日別差枚'].cumsum()
     
-    with st.expander(f"📊 台番号 {machine_no} の詳細トレンドを表示", expanded=True):
+    with st.expander(f"📊 台番号 {machine_no} の詳細トレンド", expanded=False): # 🌟 たくさん表示されるため、最初はグラフを閉じておく設定にしました
         col1, col2 = st.columns([1, 3])
         with col1:
             st.metric("予測勝率", f"{row['勝率%']}%")
             st.metric("7日間合計", f"{row['7日計']}枚")
         with col2:
             st.line_chart(chart_data)
-
-st.caption("※「日別差枚」はその日の単独の差枚、「累積差枚」は6日前から足し算していったスランプグラフです。")
