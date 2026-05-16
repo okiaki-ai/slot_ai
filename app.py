@@ -119,14 +119,12 @@ result_display['勝率%'] = result_display['勝率%'].round(1)
 st.subheader(f"📅 予測基準日: {latest_date.strftime('%Y-%m-%d')}")
 st.info("💡 【安全運用中】直近3日間（当日・前日・前々日）で+1000枚以上、または過去7日間合計が+2000枚以上の台は除外しています。")
 
-# 表を表示
 st.dataframe(result_display, use_container_width=True, hide_index=True)
 
-# 🌟 新規追加：個別台の7日間推移グラフ
+# 🌟 個別台の7日間推移グラフ（累積差枚追加）
 st.markdown("---")
 st.subheader("📈 オススメ台の7日間トレンド（波）")
 
-# グラフのX軸用に、実際の日付（MM/DD）を自動計算
 date_labels = [
     (latest_date - pd.Timedelta(days=6)).strftime('%m/%d'),
     (latest_date - pd.Timedelta(days=5)).strftime('%m/%d'),
@@ -137,12 +135,10 @@ date_labels = [
     latest_date.strftime('%m/%d(本日)')
 ]
 
-# 上位7台を1台ずつグラフ化
 for index, row in result_display.iterrows():
     machine_no = row['台番号']
     target_machine_data = recommendations[recommendations['台番号'] == machine_no].iloc[0]
     
-    # 6日前から今日までの差枚をリスト化
     history_diff = [
         target_machine_data['6日前の差枚'],
         target_machine_data['5日前の差枚'],
@@ -153,18 +149,21 @@ for index, row in result_display.iterrows():
         target_machine_data['差枚']
     ]
     
-    # グラフ用データフレーム作成（インデックスを日付のリストに変更）
+    # データフレーム作成（まずは日別差枚）
     chart_data = pd.DataFrame({
-        '差枚数': history_diff
+        '日別差枚': history_diff
     }, index=date_labels)
     
-    # 台番号をタイトルにして表示
+    # 🌟 累積差枚（スランプグラフ用）を計算して追加
+    chart_data['累積差枚'] = chart_data['日別差枚'].cumsum()
+    
     with st.expander(f"📊 台番号 {machine_no} の詳細トレンドを表示", expanded=True):
         col1, col2 = st.columns([1, 3])
         with col1:
             st.metric("予測勝率", f"{row['勝率%']}%")
             st.metric("7日間合計", f"{row['7日計']}枚")
         with col2:
-            st.area_chart(chart_data)
+            # 2つのデータがあるため、線グラフ（line_chart）の方が見やすく交差を確認できます
+            st.line_chart(chart_data)
 
-st.caption("※「グラフ」は6日前から本日までの各日の差枚数推移です。")
+st.caption("※「日別差枚」はその日の単独の差枚、「累積差枚」は6日前から足し算していったスランプグラフです。")
