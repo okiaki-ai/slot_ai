@@ -33,6 +33,7 @@ def load_data():
     
     df['合成確率_表示用'] = df['合成確率'].astype(str)
     
+    # 確率データの分母だけを抽出（例：1/290.0 → 290.0）
     df['BB確率'] = pd.to_numeric(df['BB確率'].astype(str).str.replace("1/", ""), errors='coerce').fillna(0.0)
     df['RB確率'] = pd.to_numeric(df['RB確率'].astype(str).str.replace("1/", ""), errors='coerce').fillna(0.0)
     df['合成確率'] = pd.to_numeric(df['合成確率'].astype(str).str.replace("1/", ""), errors='coerce').fillna(0.0)
@@ -62,6 +63,10 @@ for i in range(1, 8):
 df['1日前のBB'] = df.groupby('台番号')['BB'].shift(1).fillna(0).astype(int)
 df['1日前のRB'] = df.groupby('台番号')['RB'].shift(1).fillna(0).astype(int)
 df['1日前の合成_表示用'] = df.groupby('台番号')['合成確率_表示用'].shift(1).fillna('-')
+
+# 🌟 1日前のRB確率も計算して持たせておく（除外判定に使うため）
+df['1日前のRB確率'] = df.groupby('台番号')['RB確率'].shift(1).fillna(0.0)
+
 df['2日前のBB'] = df.groupby('台番号')['BB'].shift(2).fillna(0).astype(int)
 df['2日前のRB'] = df.groupby('台番号')['RB'].shift(2).fillna(0).astype(int)
 df['2日前の合成_表示用'] = df.groupby('台番号')['合成確率_表示用'].shift(2).fillna('-')
@@ -91,12 +96,16 @@ latest_df = df[df['日付'] == latest_date].copy()
 latest_df['明日勝つ確率(%)'] = model.predict_proba(latest_df[features])[:, 1] * 100
 recommendations = latest_df.sort_values('明日勝つ確率(%)', ascending=False)
 
-# 🌟【足切りルール】直近3日間で+1000以上、または7日間合計+2000以上を除外
+# 🌟【足切りルール強化】
+# 1. 直近3日間で+1000以上、または7日間合計+2000以上を除外
+# 2. 【新規追加】本日または前日のRB確率が設定4（1/290.0）より良い台を除外
 exclude_condition = (
     (recommendations['差枚'] >= 1000) | 
     (recommendations['1日前の差枚'] >= 1000) | 
     (recommendations['2日前の差枚'] >= 1000) | 
-    (recommendations['7日間合計'] >= 2000)
+    (recommendations['7日間合計'] >= 2000) |
+    ((recommendations['RB確率'] > 0) & (recommendations['RB確率'] <= 290.0)) |
+    ((recommendations['1日前のRB確率'] > 0) & (recommendations['1日前のRB確率'] <= 290.0))
 )
 recommendations = recommendations[~exclude_condition]
 
@@ -117,7 +126,7 @@ result_display['勝率%'] = result_display['勝率%'].round(1)
 
 # メイン画面表示
 st.subheader(f"📅 予測基準日: {latest_date.strftime('%Y-%m-%d')}")
-st.info("💡 【安全運用中】直近3日間（当日・前日・前々日）で+1000枚以上、または過去7日間合計が+2000枚以上の台は除外しています。")
+st.info("💡 【安全運用中】直近3日間（当日・前日・前々日）で+1000枚以上、または過去7日間合計が+2000枚以上の台を除外しています。\n\n⚠️ 【高設定不発狙い除外】本日または前日のRB確率が設定4（1/290.0）より良い高設定挙動の台もリスク回避のため除外対象としています。")
 
 st.dataframe(result_display, use_container_width=True, hide_index=True)
 
@@ -163,7 +172,6 @@ for index, row in result_display.iterrows():
             st.metric("予測勝率", f"{row['勝率%']}%")
             st.metric("7日間合計", f"{row['7日計']}枚")
         with col2:
-            # 2つのデータがあるため、線グラフ（line_chart）の方が見やすく交差を確認できます
             st.line_chart(chart_data)
 
 st.caption("※「日別差枚」はその日の単独の差枚、「累積差枚」は6日前から足し算していったスランプグラフです。")
