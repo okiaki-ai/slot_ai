@@ -126,9 +126,19 @@ st.dataframe(result_display, use_container_width=True, hide_index=True)
 st.markdown("---")
 st.subheader("📈 オススメ台の7日間トレンド（波）")
 
+# グラフのX軸用に、実際の日付（MM/DD）を自動計算
+date_labels = [
+    (latest_date - pd.Timedelta(days=6)).strftime('%m/%d'),
+    (latest_date - pd.Timedelta(days=5)).strftime('%m/%d'),
+    (latest_date - pd.Timedelta(days=4)).strftime('%m/%d'),
+    (latest_date - pd.Timedelta(days=3)).strftime('%m/%d'),
+    (latest_date - pd.Timedelta(days=2)).strftime('%m/%d'),
+    (latest_date - pd.Timedelta(days=1)).strftime('%m/%d'),
+    latest_date.strftime('%m/%d(本日)')
+]
+
 # 上位7台を1台ずつグラフ化
 for index, row in result_display.iterrows():
-    # 元のデータからこの台の過去7日間の推移を抽出
     machine_no = row['台番号']
     target_machine_data = recommendations[recommendations['台番号'] == machine_no].iloc[0]
     
@@ -143,10 +153,10 @@ for index, row in result_display.iterrows():
         target_machine_data['差枚']
     ]
     
-    # グラフ用データフレーム作成
+    # グラフ用データフレーム作成（インデックスを日付のリストに変更）
     chart_data = pd.DataFrame({
         '差枚数': history_diff
-    }, index=['6日前', '5日前', '4日前', '3日前', '前々日', '前日', '本日'])
+    }, index=date_labels)
     
     # 台番号をタイトルにして表示
     with st.expander(f"📊 台番号 {machine_no} の詳細トレンドを表示", expanded=True):
