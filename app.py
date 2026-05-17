@@ -12,7 +12,6 @@ st.set_page_config(page_title="マイジャグラー5 予測AI", layout="wide")
 st.sidebar.header("⚙️ 絞り込みフィルター")
 st.sidebar.write("数値を動かすと、リアルタイムで結果が絞り込まれます。")
 
-# ユーザーが自由に動かせるスライダー
 target_7day_max = st.sidebar.slider("① 7日計の上限 (凹み台狙い)", min_value=-5000, max_value=2000, value=0, step=100)
 top_n_picks = st.sidebar.slider("② ピックアップ台数", min_value=1, max_value=15, value=5, step=1)
 pattern_strictness = st.sidebar.slider("③ 波形の一致度 (高いほど厳密)", min_value=70, max_value=99, value=90, step=1)
@@ -82,78 +81,88 @@ model = RandomForestClassifier(n_estimators=100, random_state=42)
 model.fit(train_df[features], train_df['翌日勝つか'])
 
 # ==========================================
-# 3. メイン画面：AIによる明日の予測
+# 共通の危険台除外ルール
 # ==========================================
 latest_df = df[df['日付'] == latest_date].copy()
-latest_df['明日勝つ確率(%)'] = model.predict_proba(latest_df[features])[:, 1] * 100
-recommendations = latest_df.sort_values('明日勝つ確率(%)', ascending=False)
-
-# 危険な台の除外（ここは固定）
 exclude_condition = (
-    (recommendations['差枚'] >= 1000) | 
-    (recommendations['1日前の差枚'] >= 1000) | 
-    (recommendations['2日前の差枚'] >= 1000) | 
-    ((recommendations['RB確率'] > 0) & (recommendations['RB確率'] <= 310.0)) |
-    ((recommendations['1日前のRB確率'] > 0) & (recommendations['1日前のRB確率'] <= 310.0))
+    (latest_df['差枚'] >= 1000) | 
+    (latest_df['1日前の差枚'] >= 1000) | 
+    (latest_df['2日前の差枚'] >= 1000) | 
+    ((latest_df['RB確率'] > 0) & (latest_df['RB確率'] <= 310.0)) |
+    ((latest_df['1日前のRB確率'] > 0) & (latest_df['1日前のRB確率'] <= 310.0))
 )
-recommendations = recommendations[~exclude_condition]
+safe_latest_df = latest_df[~exclude_condition].copy()
 
-# 🌟 サイドバーで設定した条件で絞り込み
+# ==========================================
+# 3. メイン画面：AIによる明日の予測
+# ==========================================
+safe_latest_df['明日勝つ確率(%)'] = model.predict_proba(safe_latest_df[features])[:, 1] * 100
+recommendations = safe_latest_df.sort_values('明日勝つ確率(%)', ascending=False)
+
 recommendations = recommendations[recommendations['7日間合計'] <= target_7day_max]
-
-# 勝率の絶対値ではなく、残った中からトップN台を抽出
 recommendations = recommendations.head(top_n_picks)
 
 st.subheader(f"📅 予測基準日: {latest_date.strftime('%Y-%m-%d')}")
-st.info(f"💡 【AI予測】条件（7日計 {target_7day_max}枚以下）をクリアした台の中から、AI勝率上位 **{len(recommendations)}台** を表示しています。")
+st.info(f"💡 【AI予測】条件（7日計 {target_7day_max}枚以下）をクリアした安全な台の中から、AI勝率上位 **{len(recommendations)}台** を表示しています。")
 
 result_display = recommendations[['台番号', '明日勝つ確率(%)', '7日間合計', '差枚', 'RB確率', 'BB', 'RB']].copy()
 st.dataframe(result_display.rename(columns={'明日勝つ確率(%)': '勝率%', '7日間合計': '7日計'}), use_container_width=True, hide_index=True)
 
+# 過去の高設定台（正解データ）を抽出
+high_setting_days = df[(df['RB確率'] > 0) & (df['RB確率'] <= 290) & (df['差枚'] >= 1000)].copy()
+
 # ==========================================
-# 4. パターンマッチング予測 (波の形 + 深さで抽出)
+# 4. パターンマッチング予測 (波の形 + 深さ + 領域で抽出)
 # ==========================================
 st.markdown("---")
-st.subheader("🎯 パターンマッチング予測 (波の形＋深さ)")
-
-high_setting_days = df[(df['RB確率'] > 0) & (df['RB確率'] <= 290) & (df['差枚'] >= 1000)].copy()
+st.subheader("🎯 パターンマッチング予測 (波の形＋深さ＋領域)")
 
 if not high_setting_days.empty:
     historical_patterns = []
     for idx, row in high_setting_days.iterrows():
         hw = row[['7日前の差枚', '6日前の差枚', '5日前の差枚', '4日前の差枚', '3日前の差枚', '2日前の差枚', '1日前の差枚']].values.astype(float)
         if np.std(hw) > 0:
-            # 過去の波の「深さ（最大値と最小値の差）」を記録
             hw_depth = np.max(hw) - np.min(hw)
+            # 🌟 新規追加：過去の波の「底（一番凹んだ場所）」の位置を記憶
+            hw_bottom = np.min(hw) 
+            
             historical_patterns.append({
                 'date': row['日付'].strftime('%m/%d'),
                 'machine': row['台番号'],
                 'wave': hw,
-                'depth': hw_depth
+                'depth': hw_depth,
+                'bottom': hw_bottom # 記憶させる
             })
 
     if historical_patterns:
         match_results = []
-        for idx, row in latest_df.iterrows():
+        pm_candidates = safe_latest_df[safe_latest_df['7日間合計'] <= target_7day_max]
+        
+        for idx, row in pm_candidates.iterrows():
             current_machine = row['台番号']
             cw = row[['6日前の差枚', '5日前の差枚', '4日前の差枚', '3日前の差枚', '2日前の差枚', '1日前の差枚', '差枚']].values.astype(float)
 
             if np.std(cw) > 0:
                 cw_depth = np.max(cw) - np.min(cw)
+                # 🌟 新規追加：現在の波の「底」の位置を確認
+                cw_bottom = np.min(cw)
+                
                 best_match_score = -1
                 best_match_info = ""
 
                 for hp in historical_patterns:
                     # 1. 形が似ているか（相関係数）
                     score = np.corrcoef(cw, hp['wave'])[0, 1]
-                    # 2. 波の規模（深さ）が過去の爆発前と近いか（誤差1000枚以内）
+                    # 2. 波の揺れ幅（深さ）の誤差が1000枚以内か
                     depth_diff = abs(cw_depth - hp['depth'])
+                    # 🌟 3. 新規追加：波の絶対的な位置（底の深さ）の誤差が1000枚以内か
+                    bottom_diff = abs(cw_bottom - hp['bottom'])
                     
-                    if not np.isnan(score) and score > best_match_score and depth_diff <= 1000:
+                    # 3つの条件をすべてクリアした本物だけを抽出！
+                    if not np.isnan(score) and score > best_match_score and depth_diff <= 1000 and bottom_diff <= 1000:
                         best_match_score = score
                         best_match_info = f"{hp['date']}の{hp['machine']}番台"
 
-                # 🌟 サイドバーで設定した一致度（%）以上なら抽出
                 if best_match_score >= (pattern_strictness / 100.0):
                     match_results.append({
                         '台番号': current_machine,
@@ -165,7 +174,7 @@ if not high_setting_days.empty:
         match_df = pd.DataFrame(match_results)
         if not match_df.empty:
             match_df = match_df.sort_values('類似度(%)', ascending=False)
-            st.success(f"🔥 過去の爆発前と「波の形」も「深さ」もそっくりな台を **{len(match_df)}台** 発見しました！")
+            st.success(f"🔥 過去の爆発前と「波の形」「揺れ幅」「プラス・マイナス域の位置」すべてがそっくりな台を **{len(match_df)}台** 発見しました！")
             st.dataframe(match_df, use_container_width=True, hide_index=True)
         else:
-            st.info(f"現在、波形一致度が {pattern_strictness}% を超える台はありませんでした。サイドバーから一致度を下げるか、明日は慎重な立ち回りを推奨します。")
+            st.info(f"現在、厳密な波形一致度が {pattern_strictness}% を超える台はありませんでした。")
