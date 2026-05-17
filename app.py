@@ -5,9 +5,18 @@ from sklearn.ensemble import RandomForestClassifier
 import time
 
 # ==========================================
-# 画面の基本設定
+# 画面の基本設定 & サイドバー（絞り込み設定）
 # ==========================================
 st.set_page_config(page_title="マイジャグラー5 予測AI", layout="wide")
+
+st.sidebar.header("⚙️ 絞り込みフィルター")
+st.sidebar.write("数値を動かすと、リアルタイムで結果が絞り込まれます。")
+
+# ユーザーが自由に動かせるスライダー
+target_7day_max = st.sidebar.slider("① 7日計の上限 (凹み台狙い)", min_value=-5000, max_value=2000, value=0, step=100)
+top_n_picks = st.sidebar.slider("② ピックアップ台数", min_value=1, max_value=15, value=5, step=1)
+pattern_strictness = st.sidebar.slider("③ 波形の一致度 (高いほど厳密)", min_value=70, max_value=99, value=90, step=1)
+
 st.title("🎰 マイジャグラー5 狙い目予測AI & 傾向分析")
 st.write("過去データに基づき、明日の勝率予測と高設定投入パターンの分析を行います。")
 
@@ -79,58 +88,48 @@ latest_df = df[df['日付'] == latest_date].copy()
 latest_df['明日勝つ確率(%)'] = model.predict_proba(latest_df[features])[:, 1] * 100
 recommendations = latest_df.sort_values('明日勝つ確率(%)', ascending=False)
 
-# 1. 危険な台を除外（ネガティブ・フィルター）
+# 危険な台の除外（ここは固定）
 exclude_condition = (
     (recommendations['差枚'] >= 1000) | 
     (recommendations['1日前の差枚'] >= 1000) | 
     (recommendations['2日前の差枚'] >= 1000) | 
-    (recommendations['7日間合計'] >= 2000) |
     ((recommendations['RB確率'] > 0) & (recommendations['RB確率'] <= 310.0)) |
     ((recommendations['1日前のRB確率'] > 0) & (recommendations['1日前のRB確率'] <= 310.0))
 )
 recommendations = recommendations[~exclude_condition]
 
-# 🌟 2. 勝てる台だけを厳選（ポジティブ・フィルター追加！）
-# 「AI勝率が50%以上」かつ「7日間合計がマイナス（反発待ち）」の台だけを残す
-strict_condition = (
-    (recommendations['明日勝つ確率(%)'] >= 50.0) & 
-    (recommendations['7日間合計'] < 0)
-)
-recommendations = recommendations[strict_condition]
+# 🌟 サイドバーで設定した条件で絞り込み
+recommendations = recommendations[recommendations['7日間合計'] <= target_7day_max]
 
-# 🌟 3. さらにその中から上位5台に絞る
-recommendations = recommendations.head(5)
+# 勝率の絶対値ではなく、残った中からトップN台を抽出
+recommendations = recommendations.head(top_n_picks)
 
 st.subheader(f"📅 予測基準日: {latest_date.strftime('%Y-%m-%d')}")
-st.info(f"💡 【超・厳選モード】以下の厳しい条件をすべてクリアした最強の **{len(recommendations)}台** のみを表示しています。\n\n"
-        f"✅ AI予測勝率が50%以上\n"
-        f"✅ 7日間合計差枚がマイナス（反発ポテンシャルあり）\n"
-        f"✅ 出すぎ・高設定挙動の台は完全除外済み")
+st.info(f"💡 【AI予測】条件（7日計 {target_7day_max}枚以下）をクリアした台の中から、AI勝率上位 **{len(recommendations)}台** を表示しています。")
 
 result_display = recommendations[['台番号', '明日勝つ確率(%)', '7日間合計', '差枚', 'RB確率', 'BB', 'RB']].copy()
 st.dataframe(result_display.rename(columns={'明日勝つ確率(%)': '勝率%', '7日間合計': '7日計'}), use_container_width=True, hide_index=True)
 
-# 過去の高設定台（正解データ）を抽出
-high_setting_days = df[
-    (df['RB確率'] > 0) & (df['RB確率'] <= 290) & (df['差枚'] >= 1000)
-].copy()
-
 # ==========================================
-# 4. パターンマッチング予測 (波の形で抽出)
+# 4. パターンマッチング予測 (波の形 + 深さで抽出)
 # ==========================================
 st.markdown("---")
-st.subheader("🎯 パターンマッチング予測 (波の形で抽出)")
-st.write("AIの予測とは別に、「過去の高設定投入前の7日間の波」と、現在のグラフの形が**数学的にそっくりな台（類似度80%以上）**を自動抽出します。")
+st.subheader("🎯 パターンマッチング予測 (波の形＋深さ)")
+
+high_setting_days = df[(df['RB確率'] > 0) & (df['RB確率'] <= 290) & (df['差枚'] >= 1000)].copy()
 
 if not high_setting_days.empty:
     historical_patterns = []
     for idx, row in high_setting_days.iterrows():
         hw = row[['7日前の差枚', '6日前の差枚', '5日前の差枚', '4日前の差枚', '3日前の差枚', '2日前の差枚', '1日前の差枚']].values.astype(float)
         if np.std(hw) > 0:
+            # 過去の波の「深さ（最大値と最小値の差）」を記録
+            hw_depth = np.max(hw) - np.min(hw)
             historical_patterns.append({
                 'date': row['日付'].strftime('%m/%d'),
                 'machine': row['台番号'],
-                'wave': hw
+                'wave': hw,
+                'depth': hw_depth
             })
 
     if historical_patterns:
@@ -140,81 +139,33 @@ if not high_setting_days.empty:
             cw = row[['6日前の差枚', '5日前の差枚', '4日前の差枚', '3日前の差枚', '2日前の差枚', '1日前の差枚', '差枚']].values.astype(float)
 
             if np.std(cw) > 0:
+                cw_depth = np.max(cw) - np.min(cw)
                 best_match_score = -1
                 best_match_info = ""
 
                 for hp in historical_patterns:
+                    # 1. 形が似ているか（相関係数）
                     score = np.corrcoef(cw, hp['wave'])[0, 1]
-                    if not np.isnan(score) and score > best_match_score:
+                    # 2. 波の規模（深さ）が過去の爆発前と近いか（誤差1000枚以内）
+                    depth_diff = abs(cw_depth - hp['depth'])
+                    
+                    if not np.isnan(score) and score > best_match_score and depth_diff <= 1000:
                         best_match_score = score
                         best_match_info = f"{hp['date']}の{hp['machine']}番台"
 
-                if best_match_score >= 0.80:
+                # 🌟 サイドバーで設定した一致度（%）以上なら抽出
+                if best_match_score >= (pattern_strictness / 100.0):
                     match_results.append({
                         '台番号': current_machine,
                         '類似度(%)': round(best_match_score * 100, 1),
                         '一致した過去の爆発台': best_match_info,
-                        '現在の7日計': row['7日間合計'],
-                        '現在の勝率予測': round(row['明日勝つ確率(%)'], 1)
+                        '現在の7日計': row['7日間合計']
                     })
 
         match_df = pd.DataFrame(match_results)
         if not match_df.empty:
             match_df = match_df.sort_values('類似度(%)', ascending=False)
-            st.success(f"🔥 過去の爆発前パターンと形がそっくりな台を **{len(match_df)}台** 発見しました！")
+            st.success(f"🔥 過去の爆発前と「波の形」も「深さ」もそっくりな台を **{len(match_df)}台** 発見しました！")
             st.dataframe(match_df, use_container_width=True, hide_index=True)
         else:
-            st.info("現在、過去の爆発前パターンと形が一致する台はありませんでした。（明日は慎重な立ち回りが推奨されます）")
-else:
-    st.warning("比較するための過去の高設定データが不足しています。")
-
-# ==========================================
-# 5. 高設定投入前の波形手動分析ツール
-# ==========================================
-st.markdown("---")
-st.subheader("🔍 高設定投入前の「予兆」手動分析")
-
-if not high_setting_days.empty:
-    high_setting_days = high_setting_days.sort_values('日付', ascending=False)
-    case_list = high_setting_days.apply(lambda x: f"{x['日付'].strftime('%m/%d')} - 台番号:{x['台番号']} (差枚:{x['差枚']})", axis=1).tolist()
-    
-    selected_case = st.selectbox("分析する過去の事例を選択してください", case_list)
-    selected_idx = case_list.index(selected_case)
-    target_row = high_setting_days.iloc[selected_idx]
-    target_machine = target_row['台番号']
-    target_date = target_row['日付']
-    
-    machine_history = df[df['台番号'] == target_machine].sort_values('日付')
-    pre_high_history = machine_history[machine_history['日付'] <= target_date].tail(8)
-    
-    if len(pre_high_history) >= 2:
-        pre_high_history = pre_high_history.copy()
-        plot_labels = []
-        for d in pre_high_history['日付']:
-            diff_days = (d - target_date).days
-            if diff_days == 0: plot_labels.append("★当日(高設定)")
-            else: plot_labels.append(f"{diff_days}日前")
-        
-        pre_high_history.index = plot_labels
-        daily_diffs = pre_high_history['差枚'].tolist()
-        cumulative_diffs = [0]
-        current_sum = 0
-        for d in daily_diffs:
-            current_sum += d
-            cumulative_diffs.append(current_sum)
-            
-        chart_labels = ["起点"] + plot_labels
-        plot_df = pd.DataFrame({'累積差枚': cumulative_diffs}, index=chart_labels)
-        
-        st.write(f"### 台番号 {target_machine}：{target_date.strftime('%Y-%m-%d')} の投入前波形")
-        st.line_chart(plot_df)
-        
-        st.write("▼ 当日の詳細データ")
-        st.table(pd.DataFrame([{
-            "日付": target_date.strftime('%Y-%m-%d'),
-            "台番号": target_machine,
-            "差枚": f"+{target_row['差枚']}枚",
-            "RB確率": f"1/{target_row['RB確率']:.1f}"
-        }]))
-    else:
-        st.warning("直前データが不足しているためグラフを表示できません。")
+            st.info(f"現在、波形一致度が {pattern_strictness}% を超える台はありませんでした。サイドバーから一致度を下げるか、明日は慎重な立ち回りを推奨します。")
