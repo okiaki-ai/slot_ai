@@ -140,7 +140,12 @@ if not high_setting_days.empty:
         
         for idx, row in pm_candidates.iterrows():
             current_machine = row['台番号']
-            cw = row[['6日前の差枚', '5日前の差枚', '4日前の差枚', '3日前の差枚', '2日前の差枚', '1日前の差枚', '差枚']].values.astype(float)
+            # 現在の台の7日間の波を取得して保存しておく（グラフ描画用）
+            cw_diffs = [
+                row['6日前の差枚'], row['5日前の差枚'], row['4日前の差枚'], 
+                row['3日前の差枚'], row['2日前の差枚'], row['1日前の差枚'], row['差枚']
+            ]
+            cw = np.array(cw_diffs, dtype=float)
 
             if np.std(cw) > 0:
                 cw_depth = np.max(cw) - np.min(cw)
@@ -169,7 +174,8 @@ if not high_setting_days.empty:
                         '一致した過去の爆発台': best_match_info,
                         '現在の7日計': row['7日間合計'],
                         'past_date': best_match_date,
-                        'past_machine': best_match_machine
+                        'past_machine': best_match_machine,
+                        'cw_diffs': cw_diffs # グラフ用に現在の波の生データを保持
                     })
 
         match_df = pd.DataFrame(match_results)
@@ -178,49 +184,78 @@ if not high_setting_days.empty:
             st.success(f"🔥 過去の爆発前と「波の形」「揺れ幅」「プラス・マイナス域の位置」すべてがそっくりな台を **{len(match_df_sorted)}台** 発見しました！")
             st.dataframe(match_df_sorted[['台番号', '類似度(%)', '一致した過去の爆発台', '現在の7日計']], use_container_width=True, hide_index=True)
             
-            st.markdown("### 📈 一致した過去の爆発台の詳細データと推移")
+            st.markdown("### 📈 ピックアップ台と過去の爆発台の「波の比較」")
             
             for idx, m_row in match_df_sorted.iterrows():
+                current_machine = m_row['台番号']
                 p_mach = m_row['past_machine']
                 p_date = m_row['past_date']
+                cw_diffs = m_row['cw_diffs']
                 
+                # ----------------------------------------
+                # ① 現在のピックアップ台の累積差枚を計算
+                # ----------------------------------------
+                cw_cum = [0]
+                c_sum = 0
+                for d in cw_diffs:
+                    c_sum += d
+                    cw_cum.append(c_sum)
+                # 現在の台は「明日（爆発）」と「明後日（結果）」のデータがないので None で埋める
+                cw_cum.extend([None, None])
+                
+                # ----------------------------------------
+                # ② 過去の爆発台の累積差枚を計算
+                # ----------------------------------------
                 p_history = df[df['台番号'] == p_mach].sort_values('日付').reset_index(drop=True)
                 target_idx_list = p_history[p_history['日付'] == p_date].index
                 
                 if len(target_idx_list) > 0:
                     t_idx = target_idx_list[0]
+                    target_record = p_history.loc[t_idx] # 爆発当日のデータ
                     
-                    # 🌟 爆発当日の詳細データを取得
-                    target_record = p_history.loc[t_idx]
+                    # 爆発する前の7日間のデータ
+                    pw_diffs = [
+                        target_record['7日前の差枚'], target_record['6日前の差枚'],
+                        target_record['5日前の差枚'], target_record['4日前の差枚'],
+                        target_record['3日前の差枚'], target_record['2日前の差枚'],
+                        target_record['1日前の差枚']
+                    ]
                     
-                    start_idx = max(0, t_idx - 7)
-                    end_idx = min(len(p_history), t_idx + 2) 
-                    
-                    sub_hist = p_history.iloc[start_idx:end_idx].copy()
-                    
-                    labels = []
-                    for d in sub_hist['日付']:
-                        diff = (d - p_date).days
-                        if diff == 0: labels.append("★当日(爆発)")
-                        elif diff == 1: labels.append("🚀翌日(結果)")
-                        else: labels.append(f"{diff}日前")
-                    
-                    sub_hist.index = labels
-                    daily_diffs = sub_hist['差枚'].tolist()
-                    
-                    cumulative_diffs = [0]
-                    c_sum = 0
-                    for dd in daily_diffs:
-                        c_sum += dd
-                        cumulative_diffs.append(c_sum)
-                    
-                    chart_labels = ["起点"] + labels
-                    plot_match_df = pd.DataFrame({'累積差枚': cumulative_diffs}, index=chart_labels)
-                    
-                    with st.expander(f"📊 【現在の{m_row['台番号']}番台】と一致 ➡️ {m_row['一致した過去の爆発台']} のデータ"):
+                    pw_cum = [0]
+                    p_sum = 0
+                    for d in pw_diffs:
+                        p_sum += d
+                        pw_cum.append(p_sum)
                         
-                        # 🌟 爆発当日の数値をパネルで強調表示
-                        st.markdown(f"**▼ 爆発当日（{p_date.strftime('%m/%d')}）の最終結果**")
+                    # 爆発当日のデータを追加
+                    p_sum += target_record['差枚']
+                    pw_cum.append(p_sum)
+                    
+                    # 翌日のデータがあれば追加
+                    if t_idx + 1 < len(p_history):
+                        next_record = p_history.loc[t_idx + 1]
+                        p_sum += next_record['差枚']
+                        pw_cum.append(p_sum)
+                    else:
+                        pw_cum.append(None)
+                        
+                    # ----------------------------------------
+                    # ③ グラフ描画（2つの線を重ねる）
+                    # ----------------------------------------
+                    # 順番が崩れないように、先頭に数字（0〜9）をつけてラベルを作成
+                    x_labels = [
+                        "0_起点", "1_6日前", "2_5日前", "3_4日前", "4_3日前", 
+                        "5_2日前", "6_現在(前日)", "7_★爆発", "8_🚀翌日"
+                    ]
+                    
+                    plot_df = pd.DataFrame({
+                        f"過去: {p_mach}番台 ({p_date.strftime('%m/%d')}爆発)": pw_cum,
+                        f"現在: {current_machine}番台": cw_cum
+                    }, index=x_labels)
+                    
+                    with st.expander(f"📊 【現在 {current_machine}番台】 ➡️ 【過去 {p_mach}番台】と比較", expanded=True):
+                        
+                        st.markdown(f"**▼ 過去の爆発当日（{p_date.strftime('%m/%d')}）の詳細データ**")
                         col1, col2, col3, col4 = st.columns(4)
                         with col1:
                             st.metric("差枚", f"{int(target_record['差枚']):+}枚")
@@ -232,7 +267,7 @@ if not high_setting_days.empty:
                             st.metric("合成確率", str(target_record['合成確率_表示用']))
                         
                         st.markdown("---")
-                        st.write("▼ 投入前7日間 〜 翌日までの波形推移")
-                        st.line_chart(plot_match_df)
+                        st.write("▼ 波の比較グラフ（過去の台はそのまま【翌日】まで突き抜けます）")
+                        st.line_chart(plot_df)
         else:
             st.info(f"現在、厳密な波形一致度が {pattern_strictness}% を超える台はありませんでした。")
