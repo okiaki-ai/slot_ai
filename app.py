@@ -140,7 +140,6 @@ if not high_setting_days.empty:
         
         for idx, row in pm_candidates.iterrows():
             current_machine = row['台番号']
-            # 現在の台の7日間の波を取得して保存しておく（グラフ描画用）
             cw_diffs = [
                 row['6日前の差枚'], row['5日前の差枚'], row['4日前の差枚'], 
                 row['3日前の差枚'], row['2日前の差枚'], row['1日前の差枚'], row['差枚']
@@ -175,7 +174,7 @@ if not high_setting_days.empty:
                         '現在の7日計': row['7日間合計'],
                         'past_date': best_match_date,
                         'past_machine': best_match_machine,
-                        'cw_diffs': cw_diffs # グラフ用に現在の波の生データを保持
+                        'cw_diffs': cw_diffs
                     })
 
         match_df = pd.DataFrame(match_results)
@@ -192,28 +191,23 @@ if not high_setting_days.empty:
                 p_date = m_row['past_date']
                 cw_diffs = m_row['cw_diffs']
                 
-                # ----------------------------------------
                 # ① 現在のピックアップ台の累積差枚を計算
-                # ----------------------------------------
                 cw_cum = [0]
                 c_sum = 0
                 for d in cw_diffs:
                     c_sum += d
                     cw_cum.append(c_sum)
-                # 現在の台は「明日（爆発）」と「明後日（結果）」のデータがないので None で埋める
+                # 🌟 現在の台は「明日（爆発）」と「明後日（結果）」がまだ無いので None で埋める
                 cw_cum.extend([None, None])
                 
-                # ----------------------------------------
                 # ② 過去の爆発台の累積差枚を計算
-                # ----------------------------------------
                 p_history = df[df['台番号'] == p_mach].sort_values('日付').reset_index(drop=True)
                 target_idx_list = p_history[p_history['日付'] == p_date].index
                 
                 if len(target_idx_list) > 0:
                     t_idx = target_idx_list[0]
-                    target_record = p_history.loc[t_idx] # 爆発当日のデータ
+                    target_record = p_history.loc[t_idx]
                     
-                    # 爆発する前の7日間のデータ
                     pw_diffs = [
                         target_record['7日前の差枚'], target_record['6日前の差枚'],
                         target_record['5日前の差枚'], target_record['4日前の差枚'],
@@ -227,11 +221,11 @@ if not high_setting_days.empty:
                         p_sum += d
                         pw_cum.append(p_sum)
                         
-                    # 爆発当日のデータを追加
+                    # 爆発当日を追加
                     p_sum += target_record['差枚']
                     pw_cum.append(p_sum)
                     
-                    # 翌日のデータがあれば追加
+                    # 翌日を追加（データがあれば）
                     if t_idx + 1 < len(p_history):
                         next_record = p_history.loc[t_idx + 1]
                         p_sum += next_record['差枚']
@@ -239,15 +233,13 @@ if not high_setting_days.empty:
                     else:
                         pw_cum.append(None)
                         
-                    # ----------------------------------------
-                    # ③ グラフ描画（2つの線を重ねる）
-                    # ----------------------------------------
-                    # 順番が崩れないように、先頭に数字（0〜9）をつけてラベルを作成
+                    # 🌟 修正ポイント：ラベルに「6_1日前」を追加して合計10個にしました
                     x_labels = [
                         "0_起点", "1_6日前", "2_5日前", "3_4日前", "4_3日前", 
-                        "5_2日前", "6_現在(前日)", "7_★爆発", "8_🚀翌日"
+                        "5_2日前", "6_1日前", "7_現在(前日)", "8_★爆発", "9_🚀翌日"
                     ]
                     
+                    # データフレーム作成（ここでエラーが起きていました）
                     plot_df = pd.DataFrame({
                         f"過去: {p_mach}番台 ({p_date.strftime('%m/%d')}爆発)": pw_cum,
                         f"現在: {current_machine}番台": cw_cum
@@ -267,7 +259,7 @@ if not high_setting_days.empty:
                             st.metric("合成確率", str(target_record['合成確率_表示用']))
                         
                         st.markdown("---")
-                        st.write("▼ 波の比較グラフ（過去の台はそのまま【翌日】まで突き抜けます）")
+                        st.write("▼ 波の比較グラフ（青線と赤線で2つの軌跡が重なります）")
                         st.line_chart(plot_df)
         else:
             st.info(f"現在、厳密な波形一致度が {pattern_strictness}% を超える台はありませんでした。")
