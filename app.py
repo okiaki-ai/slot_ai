@@ -123,15 +123,15 @@ if not high_setting_days.empty:
         hw = row[['7日前の差枚', '6日前の差枚', '5日前の差枚', '4日前の差枚', '3日前の差枚', '2日前の差枚', '1日前の差枚']].values.astype(float)
         if np.std(hw) > 0:
             hw_depth = np.max(hw) - np.min(hw)
-            # 🌟 新規追加：過去の波の「底（一番凹んだ場所）」の位置を記憶
             hw_bottom = np.min(hw) 
             
             historical_patterns.append({
                 'date': row['日付'].strftime('%m/%d'),
+                'raw_date': row['日付'], 
                 'machine': row['台番号'],
                 'wave': hw,
                 'depth': hw_depth,
-                'bottom': hw_bottom # 記憶させる
+                'bottom': hw_bottom 
             })
 
     if historical_patterns:
@@ -144,37 +144,95 @@ if not high_setting_days.empty:
 
             if np.std(cw) > 0:
                 cw_depth = np.max(cw) - np.min(cw)
-                # 🌟 新規追加：現在の波の「底」の位置を確認
                 cw_bottom = np.min(cw)
                 
                 best_match_score = -1
                 best_match_info = ""
+                best_match_date = None
+                best_match_machine = None
 
                 for hp in historical_patterns:
-                    # 1. 形が似ているか（相関係数）
                     score = np.corrcoef(cw, hp['wave'])[0, 1]
-                    # 2. 波の揺れ幅（深さ）の誤差が1000枚以内か
                     depth_diff = abs(cw_depth - hp['depth'])
-                    # 🌟 3. 新規追加：波の絶対的な位置（底の深さ）の誤差が1000枚以内か
                     bottom_diff = abs(cw_bottom - hp['bottom'])
                     
-                    # 3つの条件をすべてクリアした本物だけを抽出！
                     if not np.isnan(score) and score > best_match_score and depth_diff <= 1000 and bottom_diff <= 1000:
                         best_match_score = score
                         best_match_info = f"{hp['date']}の{hp['machine']}番台"
+                        best_match_date = hp['raw_date'] 
+                        best_match_machine = hp['machine']
 
                 if best_match_score >= (pattern_strictness / 100.0):
                     match_results.append({
                         '台番号': current_machine,
                         '類似度(%)': round(best_match_score * 100, 1),
                         '一致した過去の爆発台': best_match_info,
-                        '現在の7日計': row['7日間合計']
+                        '現在の7日計': row['7日間合計'],
+                        'past_date': best_match_date,
+                        'past_machine': best_match_machine
                     })
 
         match_df = pd.DataFrame(match_results)
         if not match_df.empty:
-            match_df = match_df.sort_values('類似度(%)', ascending=False)
-            st.success(f"🔥 過去の爆発前と「波の形」「揺れ幅」「プラス・マイナス域の位置」すべてがそっくりな台を **{len(match_df)}台** 発見しました！")
-            st.dataframe(match_df, use_container_width=True, hide_index=True)
+            match_df_sorted = match_df.sort_values('類似度(%)', ascending=False)
+            st.success(f"🔥 過去の爆発前と「波の形」「揺れ幅」「プラス・マイナス域の位置」すべてがそっくりな台を **{len(match_df_sorted)}台** 発見しました！")
+            st.dataframe(match_df_sorted[['台番号', '類似度(%)', '一致した過去の爆発台', '現在の7日計']], use_container_width=True, hide_index=True)
+            
+            st.markdown("### 📈 一致した過去の爆発台の詳細データと推移")
+            
+            for idx, m_row in match_df_sorted.iterrows():
+                p_mach = m_row['past_machine']
+                p_date = m_row['past_date']
+                
+                p_history = df[df['台番号'] == p_mach].sort_values('日付').reset_index(drop=True)
+                target_idx_list = p_history[p_history['日付'] == p_date].index
+                
+                if len(target_idx_list) > 0:
+                    t_idx = target_idx_list[0]
+                    
+                    # 🌟 爆発当日の詳細データを取得
+                    target_record = p_history.loc[t_idx]
+                    
+                    start_idx = max(0, t_idx - 7)
+                    end_idx = min(len(p_history), t_idx + 2) 
+                    
+                    sub_hist = p_history.iloc[start_idx:end_idx].copy()
+                    
+                    labels = []
+                    for d in sub_hist['日付']:
+                        diff = (d - p_date).days
+                        if diff == 0: labels.append("★当日(爆発)")
+                        elif diff == 1: labels.append("🚀翌日(結果)")
+                        else: labels.append(f"{diff}日前")
+                    
+                    sub_hist.index = labels
+                    daily_diffs = sub_hist['差枚'].tolist()
+                    
+                    cumulative_diffs = [0]
+                    c_sum = 0
+                    for dd in daily_diffs:
+                        c_sum += dd
+                        cumulative_diffs.append(c_sum)
+                    
+                    chart_labels = ["起点"] + labels
+                    plot_match_df = pd.DataFrame({'累積差枚': cumulative_diffs}, index=chart_labels)
+                    
+                    with st.expander(f"📊 【現在の{m_row['台番号']}番台】と一致 ➡️ {m_row['一致した過去の爆発台']} のデータ"):
+                        
+                        # 🌟 爆発当日の数値をパネルで強調表示
+                        st.markdown(f"**▼ 爆発当日（{p_date.strftime('%m/%d')}）の最終結果**")
+                        col1, col2, col3, col4 = st.columns(4)
+                        with col1:
+                            st.metric("差枚", f"{int(target_record['差枚']):+}枚")
+                        with col2:
+                            st.metric("BB回数", f"{int(target_record['BB'])}回")
+                        with col3:
+                            st.metric("RB回数", f"{int(target_record['RB'])}回")
+                        with col4:
+                            st.metric("合成確率", str(target_record['合成確率_表示用']))
+                        
+                        st.markdown("---")
+                        st.write("▼ 投入前7日間 〜 翌日までの波形推移")
+                        st.line_chart(plot_match_df)
         else:
             st.info(f"現在、厳密な波形一致度が {pattern_strictness}% を超える台はありませんでした。")
