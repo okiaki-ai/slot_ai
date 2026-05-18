@@ -283,20 +283,20 @@ if not high_setting_days.empty:
                             st.metric("合成確率", str(target_record['合成確率_表示用']))
                         
                         st.markdown("---")
-                        st.write("▼ 波の比較グラフ (背景の棒グラフが【その日の単独差枚】です)")
                         
                         # ----------------------------------------------------
-                        # ④ グラフ設定の修正（横並び表示）
+                        # ④ グラフ設定の修正（スマホ対応レイアウト）
                         # ----------------------------------------------------
                         base = alt.Chart(df_plot).encode(
-                            x=alt.X('期間:O', sort=x_labels, title="", axis=alt.Axis(labelAngle=0)),
+                            # 🌟 修正ポイント1： X軸のタイトルとして表示し、下に少し余白を設ける
+                            x=alt.X('期間:O', sort=x_labels, title="差枚数 (棒=日別 / 線=累積)", axis=alt.Axis(labelAngle=0, titlePadding=10)),
                             color=alt.Color('種別:N', legend=alt.Legend(title="", orient="top"))
                         )
                         
-                        # 🌟 修正ポイント：xOffset を追加して棒グラフを横に並べる
                         bars = base.mark_bar(opacity=0.6).encode(
                             xOffset='種別:N',
-                            y=alt.Y('日別差枚:Q', title="差枚数 (棒=日別 / 線=累積)", axis=alt.Axis(minExtent=60))
+                            # 🌟 修正ポイント2： Y軸のタイトルを完全に削除（title=""）して横幅を節約
+                            y=alt.Y('日別差枚:Q', title="", axis=alt.Axis(minExtent=45))
                         )
                         
                         lines = base.mark_line(size=3).encode(
