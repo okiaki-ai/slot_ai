@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 import time
-import altair as alt # 🌟 複合グラフを描くためのライブラリを追加！
+import altair as alt
 
 # ==========================================
 # 画面の基本設定 & サイドバー（絞り込み設定）
@@ -192,9 +192,7 @@ if not high_setting_days.empty:
                 p_date = m_row['past_date']
                 cw_diffs = m_row['cw_diffs']
                 
-                # ----------------------------------------------------
-                # ① 現在のピックアップ台の「日別」と「累積」を計算
-                # ----------------------------------------------------
+                # ① 現在のピックアップ台の計算
                 cw_cum = [0]
                 cw_daily = [0]
                 c_sum = 0
@@ -202,14 +200,10 @@ if not high_setting_days.empty:
                     c_sum += d
                     cw_cum.append(c_sum)
                     cw_daily.append(d)
-                
-                # 現在の台は未来がないので None で埋める
                 cw_cum.extend([None, None])
                 cw_daily.extend([None, None])
                 
-                # ----------------------------------------------------
-                # ② 過去の爆発台の「日別」と「累積」を計算
-                # ----------------------------------------------------
+                # ② 過去の爆発台の計算
                 p_history = df[df['台番号'] == p_mach].sort_values('日付').reset_index(drop=True)
                 target_idx_list = p_history[p_history['日付'] == p_date].index
                 
@@ -232,13 +226,11 @@ if not high_setting_days.empty:
                         pw_cum.append(p_sum)
                         pw_daily.append(d)
                         
-                    # 爆発当日を追加
                     t_diff = target_record['差枚']
                     p_sum += t_diff
                     pw_cum.append(p_sum)
                     pw_daily.append(t_diff)
                     
-                    # 翌日を追加（データがあれば）
                     if t_idx + 1 < len(p_history):
                         next_record = p_history.loc[t_idx + 1]
                         n_diff = next_record['差枚']
@@ -249,9 +241,7 @@ if not high_setting_days.empty:
                         pw_cum.append(None)
                         pw_daily.append(None)
                         
-                    # ----------------------------------------------------
-                    # ③ Altairグラフ用のデータフレームを作成（ラベルも綺麗に！）
-                    # ----------------------------------------------------
+                    # ③ データフレーム作成
                     x_labels = [
                         "起点", "6日前", "5日前", "4日前", "3日前", 
                         "2日前", "1日前", "現在(前日)", "★爆発", "🚀翌日"
@@ -262,7 +252,6 @@ if not high_setting_days.empty:
                     
                     plot_data = []
                     for i, label in enumerate(x_labels):
-                        # 過去のデータ行を追加
                         if pw_cum[i] is not None:
                             plot_data.append({
                                 '期間': label,
@@ -270,7 +259,6 @@ if not high_setting_days.empty:
                                 '累積差枚': pw_cum[i],
                                 '日別差枚': pw_daily[i]
                             })
-                        # 現在のデータ行を追加
                         if cw_cum[i] is not None:
                             plot_data.append({
                                 '期間': label,
@@ -298,31 +286,29 @@ if not high_setting_days.empty:
                         st.write("▼ 波の比較グラフ (背景の半透明の棒グラフが【その日の単独差枚】です)")
                         
                         # ----------------------------------------------------
-                        # ④ Altairを使ったリッチな複合グラフの描画
+                        # ④ グラフ設定の修正（積み上げ解除 ＆ Y軸の余白確保）
                         # ----------------------------------------------------
                         base = alt.Chart(df_plot).encode(
                             x=alt.X('期間:O', sort=x_labels, title="", axis=alt.Axis(labelAngle=0)),
                             color=alt.Color('種別:N', legend=alt.Legend(title="", orient="top"))
                         )
                         
-                        # 背景の棒グラフ（日別差枚）
-                        bars = base.mark_bar(opacity=0.35).encode(
-                            y=alt.Y('日別差枚:Q', title="差枚数 (棒=日別 / 線=累積)")
+                        # 🌟 修正ポイント1： stack=None を追加して積み上げを防止
+                        # 🌟 修正ポイント2： minExtent=60 を追加して左側の数字が切れないようにスペースを確保
+                        bars = base.mark_bar(opacity=0.4).encode(
+                            y=alt.Y('日別差枚:Q', title="差枚数 (棒=日別 / 線=累積)", stack=None, axis=alt.Axis(minExtent=60))
                         )
                         
-                        # 手前の線グラフ（累積差枚）
                         lines = base.mark_line(size=3).encode(
                             y=alt.Y('累積差枚:Q')
                         )
                         
-                        # 線グラフの点（ポインター）
                         points = base.mark_circle(size=60, opacity=1).encode(
                             y=alt.Y('累積差枚:Q')
                         )
                         
-                        # すべてのグラフを1つに重ねて表示
                         chart = alt.layer(bars, lines, points).resolve_scale(
-                            y='shared' # Y軸の目盛りを統一
+                            y='shared'
                         ).properties(height=350)
                         
                         st.altair_chart(chart, use_container_width=True)
