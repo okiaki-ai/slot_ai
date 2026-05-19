@@ -5,12 +5,127 @@ from sklearn.ensemble import RandomForestClassifier
 import altair as alt
 
 # ==========================================
-# 画面の基本設定 & サイドバー（絞り込み設定）
+# 画面の基本設定
 # ==========================================
-st.set_page_config(page_title="ジャグラー予測AI", layout="wide")
+st.set_page_config(page_title="ジャグラー予測AI", layout="wide", page_icon="🎰")
 
-st.sidebar.header("⚙️ 絞り込みフィルター")
-st.sidebar.write("数値を動かすと、リアルタイムで結果が絞り込まれます。")
+# ==========================================
+# カスタムCSS（デザイン強化）
+# ==========================================
+st.markdown("""
+<style>
+/* 全体背景 */
+.stApp {
+    background: linear-gradient(135deg, #0d0d1a 0%, #1a1a2e 50%, #16213e 100%);
+    color: #e0e0e0;
+}
+
+/* サイドバー */
+[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #1a1a2e 0%, #0d0d1a 100%);
+    border-right: 1px solid #f0a500;
+}
+[data-testid="stSidebar"] * {
+    color: #e0e0e0 !important;
+}
+
+/* サイドバーヘッダー */
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3 {
+    color: #f0a500 !important;
+}
+
+/* メインタイトル */
+h1 {
+    background: linear-gradient(90deg, #f0a500, #ff6b6b, #f0a500);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    font-size: 2.2rem !important;
+    font-weight: 900 !important;
+    text-align: center;
+    padding: 0.5rem 0;
+}
+
+/* サブヘッダー */
+h2, h3 {
+    color: #f0a500 !important;
+    border-bottom: 1px solid #f0a50055;
+    padding-bottom: 0.3rem;
+}
+
+/* infoボックス */
+[data-testid="stInfo"] {
+    background: #1a2a4a !important;
+    border-left: 4px solid #4a9eff !important;
+    color: #cce0ff !important;
+    border-radius: 8px;
+}
+
+/* successボックス */
+[data-testid="stSuccess"] {
+    background: #1a3a2a !important;
+    border-left: 4px solid #00e676 !important;
+    color: #b9f6ca !important;
+    border-radius: 8px;
+}
+
+/* dataframe */
+[data-testid="stDataFrame"] {
+    border: 1px solid #f0a50055;
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+/* メトリクス */
+[data-testid="stMetric"] {
+    background: #1a1a2e;
+    border: 1px solid #f0a50066;
+    border-radius: 10px;
+    padding: 0.8rem 1rem;
+    text-align: center;
+}
+[data-testid="stMetricLabel"] {
+    color: #aaaaaa !important;
+    font-size: 0.8rem !important;
+}
+[data-testid="stMetricValue"] {
+    color: #f0a500 !important;
+    font-size: 1.4rem !important;
+    font-weight: bold !important;
+}
+
+/* expander */
+[data-testid="stExpander"] {
+    background: #1a1a2e !important;
+    border: 1px solid #f0a50044 !important;
+    border-radius: 10px !important;
+}
+
+/* ボタン・スライダーのアクセントカラー */
+[data-testid="stSlider"] > div > div > div {
+    background: #f0a500 !important;
+}
+
+/* セパレーター */
+hr {
+    border-color: #f0a50033 !important;
+}
+
+/* selectbox */
+[data-testid="stSelectbox"] label {
+    color: #f0a500 !important;
+    font-weight: bold;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ==========================================
+# サイドバー
+# ==========================================
+st.sidebar.markdown("## ⚙️ 絞り込みフィルター")
+st.sidebar.markdown("数値を動かすと結果がリアルタイムで絞り込まれます。")
+st.sidebar.markdown("---")
 
 # --- 機種選択 ---
 MACHINE_SHEET_MAP = {
@@ -24,25 +139,34 @@ selected_machine_label = st.sidebar.selectbox(
 )
 selected_sheet = MACHINE_SHEET_MAP[selected_machine_label]
 
+st.sidebar.markdown("---")
 target_7day_max = st.sidebar.slider("① 7日計の上限 (凹み台狙い)", min_value=-5000, max_value=2000, value=0, step=100)
 top_n_picks = st.sidebar.slider("② ピックアップ台数", min_value=1, max_value=15, value=5, step=1)
 pattern_strictness = st.sidebar.slider("③ 波形の一致度 (高いほど厳密)", min_value=70, max_value=99, value=90, step=1)
 
-st.title(f"🎰 {selected_machine_label.replace('🎰 ', '')} 狙い目予測AI & 傾向分析")
-st.write("過去データに基づき、明日の勝率予測と高設定投入パターンの分析を行います。")
+# ==========================================
+# メインタイトル
+# ==========================================
+st.markdown(f"# 🎰 {selected_machine_label.replace('🎰 ', '')} 狙い目予測AI")
+st.markdown(
+    "<p style='text-align:center; color:#aaaaaa; font-size:0.95rem;'>"
+    "過去データに基づき、明日の勝率予測と高設定投入パターンの分析を行います。"
+    "</p>",
+    unsafe_allow_html=True
+)
+st.markdown("---")
 
 # ==========================================
-# 1. データの読み込み（キャッシュなし・機種切替のたびに必ず再取得）
+# 1. データの読み込み
 # ==========================================
 def load_data(sheet_name: str):
     try:
         base_url = st.secrets[f"spreadsheet_url_{sheet_name}"]
     except KeyError:
-        st.error(f"❌ secrets に 'spreadsheet_url_{sheet_name}' が見つかりません。設定を確認してください。")
+        st.error(f"❌ secrets に 'spreadsheet_url_{sheet_name}' が見つかりません。")
         st.stop()
 
     df = pd.read_csv(base_url)
-
     df = df[df['台番号'].astype(str) != '平均']
 
     df['G数'] = pd.to_numeric(df['G数'].astype(str).str.replace(",", ""), errors='coerce').fillna(0).astype(int)
@@ -90,7 +214,7 @@ model = RandomForestClassifier(n_estimators=100, random_state=42)
 model.fit(train_df[features], train_df['翌日勝つか'])
 
 # ==========================================
-# 共通の危険台除外ルール
+# 危険台除外
 # ==========================================
 latest_df = df[df['日付'] == latest_date].copy()
 exclude_condition = (
@@ -103,44 +227,67 @@ exclude_condition = (
 safe_latest_df = latest_df[~exclude_condition].copy()
 
 # ==========================================
-# 3. メイン画面：AIによる明日の予測
+# 3. AI予測セクション
 # ==========================================
 safe_latest_df['明日勝つ確率(%)'] = model.predict_proba(safe_latest_df[features])[:, 1] * 100
 recommendations = safe_latest_df.sort_values('明日勝つ確率(%)', ascending=False)
-
 recommendations = recommendations[recommendations['7日間合計'] <= target_7day_max]
 recommendations = recommendations.head(top_n_picks)
 
-st.subheader(f"📅 予測基準日: {latest_date.strftime('%Y-%m-%d')}")
-st.info(f"💡 【AI予測】条件（7日計 {target_7day_max}枚以下）をクリアした安全な台の中から、AI勝率上位 **{len(recommendations)}台** を表示しています。")
+st.markdown(f"## 🤖 AI予測ランキング")
+
+col_date, col_count = st.columns(2)
+with col_date:
+    st.markdown(
+        f"<div style='background:#1a2a4a; border:1px solid #4a9eff; border-radius:10px; padding:0.8rem 1rem;'>"
+        f"<span style='color:#aaa; font-size:0.85rem;'>📅 予測基準日</span><br>"
+        f"<span style='color:#4a9eff; font-size:1.3rem; font-weight:bold;'>{latest_date.strftime('%Y年%m月%d日')}</span>"
+        f"</div>",
+        unsafe_allow_html=True
+    )
+with col_count:
+    st.markdown(
+        f"<div style='background:#1a3a2a; border:1px solid #00e676; border-radius:10px; padding:0.8rem 1rem;'>"
+        f"<span style='color:#aaa; font-size:0.85rem;'>🎯 ピックアップ台数</span><br>"
+        f"<span style='color:#00e676; font-size:1.3rem; font-weight:bold;'>{len(recommendations)} 台</span>"
+        f"</div>",
+        unsafe_allow_html=True
+    )
+
+st.markdown("<br>", unsafe_allow_html=True)
+st.info(f"💡 7日計 {target_7day_max}枚以下の安全な台の中から、AI勝率上位 **{len(recommendations)}台** を表示しています。")
 
 result_display = recommendations[['台番号', '明日勝つ確率(%)', '7日間合計', '差枚', 'RB確率', 'BB', 'RB']].copy()
-st.dataframe(result_display.rename(columns={'明日勝つ確率(%)': '勝率%', '7日間合計': '7日計'}), use_container_width=True, hide_index=True)
+st.dataframe(
+    result_display.rename(columns={'明日勝つ確率(%)': '勝率%', '7日間合計': '7日計'}),
+    use_container_width=True,
+    hide_index=True
+)
 
-# 過去の高設定台（正解データ）を抽出
+# ==========================================
+# 4. パターンマッチング予測
+# ==========================================
 high_setting_days = df[(df['RB確率'] > 0) & (df['RB確率'] <= 290) & (df['差枚'] >= 1000)].copy()
 
-# ==========================================
-# 4. パターンマッチング予測 (波の形 + 深さ + 領域で抽出)
-# ==========================================
 st.markdown("---")
-st.subheader("🎯 パターンマッチング予測 (波の形＋深さ＋領域)")
+st.markdown("## 🎯 パターンマッチング予測")
+st.markdown(
+    "<p style='color:#aaaaaa;'>過去の爆発台と「波の形・揺れ幅・プラスマイナス域」が一致する台を抽出します。</p>",
+    unsafe_allow_html=True
+)
 
 if not high_setting_days.empty:
     historical_patterns = []
     for idx, row in high_setting_days.iterrows():
         hw = row[['7日前の差枚', '6日前の差枚', '5日前の差枚', '4日前の差枚', '3日前の差枚', '2日前の差枚', '1日前の差枚']].values.astype(float)
         if np.std(hw) > 0:
-            hw_depth = np.max(hw) - np.min(hw)
-            hw_bottom = np.min(hw)
-
             historical_patterns.append({
                 'date': row['日付'].strftime('%m/%d'),
                 'raw_date': row['日付'],
                 'machine': row['台番号'],
                 'wave': hw,
-                'depth': hw_depth,
-                'bottom': hw_bottom
+                'depth': np.max(hw) - np.min(hw),
+                'bottom': np.min(hw)
             })
 
     if historical_patterns:
@@ -158,7 +305,6 @@ if not high_setting_days.empty:
             if np.std(cw) > 0:
                 cw_depth = np.max(cw) - np.min(cw)
                 cw_bottom = np.min(cw)
-
                 best_match_score = -1
                 best_match_info = ""
                 best_match_date = None
@@ -189,10 +335,14 @@ if not high_setting_days.empty:
         match_df = pd.DataFrame(match_results)
         if not match_df.empty:
             match_df_sorted = match_df.sort_values('類似度(%)', ascending=False)
-            st.success(f"🔥 過去の爆発前と「波の形」「揺れ幅」「プラス・マイナス域の位置」すべてがそっくりな台を **{len(match_df_sorted)}台** 発見しました！")
-            st.dataframe(match_df_sorted[['台番号', '類似度(%)', '一致した過去の爆発台', '現在の7日計']], use_container_width=True, hide_index=True)
+            st.success(f"🔥 波形が一致する台を **{len(match_df_sorted)}台** 発見しました！")
+            st.dataframe(
+                match_df_sorted[['台番号', '類似度(%)', '一致した過去の爆発台', '現在の7日計']],
+                use_container_width=True,
+                hide_index=True
+            )
 
-            st.markdown("### 📈 ピックアップ台と過去の爆発台の「波の比較」")
+            st.markdown("### 📈 波形比較グラフ")
 
             for idx, m_row in match_df_sorted.iterrows():
                 current_machine = m_row['台番号']
@@ -247,34 +397,20 @@ if not high_setting_days.empty:
                         pw_cum.append(None)
                         pw_daily.append(None)
 
-                    x_labels = [
-                        "起点", "6日前", "5日前", "4日前", "3日前",
-                        "2日前", "1日前", "現在(前日)", "★爆発", "🚀翌日"
-                    ]
-
+                    x_labels = ["起点", "6日前", "5日前", "4日前", "3日前", "2日前", "1日前", "現在(前日)", "★爆発", "🚀翌日"]
                     past_label = f"過去: {p_mach}番台"
                     curr_label = f"現在: {current_machine}番台"
 
                     plot_data = []
                     for i, label in enumerate(x_labels):
                         if pw_cum[i] is not None:
-                            plot_data.append({
-                                '期間': label,
-                                '種別': past_label,
-                                '累積差枚': pw_cum[i],
-                                '日別差枚': pw_daily[i]
-                            })
+                            plot_data.append({'期間': label, '種別': past_label, '累積差枚': pw_cum[i], '日別差枚': pw_daily[i]})
                         if cw_cum[i] is not None:
-                            plot_data.append({
-                                '期間': label,
-                                '種別': curr_label,
-                                '累積差枚': cw_cum[i],
-                                '日別差枚': cw_daily[i]
-                            })
+                            plot_data.append({'期間': label, '種別': curr_label, '累積差枚': cw_cum[i], '日別差枚': cw_daily[i]})
 
                     df_plot = pd.DataFrame(plot_data)
 
-                    with st.expander(f"📊 【現在 {current_machine}番台】 ➡️ 【過去 {p_mach}番台】と比較", expanded=True):
+                    with st.expander(f"📊 【現在 {current_machine}番台】 ➡️ 【過去 {p_mach}番台】と比較　類似度: {m_row['類似度(%)']:.1f}%", expanded=True):
 
                         st.markdown(f"**▼ 過去の爆発当日（{p_date.strftime('%m/%d')}）の詳細データ**")
                         col1, col2, col3, col4 = st.columns(4)
@@ -290,27 +426,26 @@ if not high_setting_days.empty:
                         st.markdown("---")
 
                         base = alt.Chart(df_plot).encode(
-                            x=alt.X('期間:O', sort=x_labels, title="差枚数 (棒=日別 / 線=累積)", axis=alt.Axis(labelAngle=0, titlePadding=10)),
-                            color=alt.Color('種別:N', legend=alt.Legend(title="", orient="top"))
+                            x=alt.X('期間:O', sort=x_labels, title="差枚数 (棒=日別 / 線=累積)", axis=alt.Axis(labelAngle=0, titlePadding=10, labelColor="#cccccc", titleColor="#aaaaaa")),
+                            color=alt.Color('種別:N', legend=alt.Legend(title="", orient="top"),
+                                scale=alt.Scale(range=["#f0a500", "#4a9eff"]))
                         )
 
                         bars = base.mark_bar(opacity=0.6).encode(
                             xOffset='種別:N',
-                            y=alt.Y('日別差枚:Q', title="", axis=alt.Axis(minExtent=45))
+                            y=alt.Y('日別差枚:Q', title="", axis=alt.Axis(minExtent=45, labelColor="#cccccc"))
                         )
 
-                        lines = base.mark_line(size=3).encode(
-                            y=alt.Y('累積差枚:Q')
-                        )
+                        lines = base.mark_line(size=3).encode(y=alt.Y('累積差枚:Q'))
+                        points = base.mark_circle(size=60, opacity=1).encode(y=alt.Y('累積差枚:Q'))
 
-                        points = base.mark_circle(size=60, opacity=1).encode(
-                            y=alt.Y('累積差枚:Q')
+                        chart = alt.layer(bars, lines, points).resolve_scale(y='shared').properties(
+                            height=350,
+                            background="transparent"
+                        ).configure_view(
+                            strokeOpacity=0
                         )
-
-                        chart = alt.layer(bars, lines, points).resolve_scale(
-                            y='shared'
-                        ).properties(height=350)
 
                         st.altair_chart(chart, use_container_width=True)
         else:
-            st.info(f"現在、厳密な波形一致度が {pattern_strictness}% を超える台はありませんでした。")
+            st.info(f"現在、波形一致度が {pattern_strictness}% を超える台はありませんでした。")
