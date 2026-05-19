@@ -32,10 +32,8 @@ st.title(f"🎰 {selected_machine_label.replace('🎰 ', '')} 狙い目予測AI 
 st.write("過去データに基づき、明日の勝率予測と高設定投入パターンの分析を行います。")
 
 # ==========================================
-# 1. データの読み込み
-# sheet_name を引数にすることで機種ごとに別々にキャッシュされる
+# 1. データの読み込み（キャッシュなし・機種切替のたびに必ず再取得）
 # ==========================================
-@st.cache_data(ttl=600)
 def load_data(sheet_name: str):
     try:
         base_url = st.secrets[f"spreadsheet_url_{sheet_name}"]
