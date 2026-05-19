@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
-import time
 import altair as alt
 
 # ==========================================
@@ -13,7 +12,7 @@ st.set_page_config(page_title="ジャグラー予測AI", layout="wide")
 st.sidebar.header("⚙️ 絞り込みフィルター")
 st.sidebar.write("数値を動かすと、リアルタイムで結果が絞り込まれます。")
 
-# --- 機種選択（追加） ---
+# --- 機種選択 ---
 MACHINE_SHEET_MAP = {
     "🎰 マイジャグラー5": "maijag5",
     "🎰 ゴーゴージャグラー": "gojag",
@@ -33,29 +32,18 @@ st.title(f"🎰 {selected_machine_label.replace('🎰 ', '')} 狙い目予測AI 
 st.write("過去データに基づき、明日の勝率予測と高設定投入パターンの分析を行います。")
 
 # ==========================================
-# 1. データの読み込み（機種シートを引数で切り替え）
+# 1. データの読み込み
+# sheet_name を引数にすることで機種ごとに別々にキャッシュされる
 # ==========================================
 @st.cache_data(ttl=600)
 def load_data(sheet_name: str):
-    cache_buster = int(time.time())
     try:
-        # secrets に各シートのURLを定義してください
-        # 例: spreadsheet_url_マイジャグ5 = "https://..."
-        # シート名をそのままキーにする場合はそのまま使えます
-        base_url = st.secrets[f"spreadsheet_url_{sheet_name}"]  # 例: spreadsheet_url_maijag5
+        base_url = st.secrets[f"spreadsheet_url_{sheet_name}"]
     except KeyError:
-        # フォールバック: 共通URLにシート名パラメータを付与する場合はこちらを使用
-        try:
-            base_url = st.secrets["spreadsheet_url"]
-            # Google スプレッドシートの場合、シート名でgidを切り替える構成にしてください
-            # ここでは sheet_name をクエリに追加する例（実際のURL構造に合わせて変更してください）
-            base_url = base_url.replace("sheet=マイジャグ5", f"sheet={sheet_name}")
-        except KeyError:
-            st.error("❌ セキュリティ用の設定が見つかりません。secrets.toml を確認してください。")
-            st.stop()
+        st.error(f"❌ secrets に 'spreadsheet_url_{sheet_name}' が見つかりません。設定を確認してください。")
+        st.stop()
 
-    url = f"{base_url}&_={cache_buster}"
-    df = pd.read_csv(url)
+    df = pd.read_csv(base_url)
 
     df = df[df['台番号'].astype(str) != '平均']
 
@@ -214,7 +202,6 @@ if not high_setting_days.empty:
                 p_date = m_row['past_date']
                 cw_diffs = m_row['cw_diffs']
 
-                # ① 現在のピックアップ台の計算
                 cw_cum = [0]
                 cw_daily = [0]
                 c_sum = 0
@@ -225,7 +212,6 @@ if not high_setting_days.empty:
                 cw_cum.extend([None, None])
                 cw_daily.extend([None, None])
 
-                # ② 過去の爆発台の計算
                 p_history = df[df['台番号'] == p_mach].sort_values('日付').reset_index(drop=True)
                 target_idx_list = p_history[p_history['日付'] == p_date].index
 
@@ -263,7 +249,6 @@ if not high_setting_days.empty:
                         pw_cum.append(None)
                         pw_daily.append(None)
 
-                    # ③ データフレーム作成
                     x_labels = [
                         "起点", "6日前", "5日前", "4日前", "3日前",
                         "2日前", "1日前", "現在(前日)", "★爆発", "🚀翌日"
@@ -306,7 +291,6 @@ if not high_setting_days.empty:
 
                         st.markdown("---")
 
-                        # ④ グラフ設定（スマホ対応レイアウト）
                         base = alt.Chart(df_plot).encode(
                             x=alt.X('期間:O', sort=x_labels, title="差枚数 (棒=日別 / 線=累積)", axis=alt.Axis(labelAngle=0, titlePadding=10)),
                             color=alt.Color('種別:N', legend=alt.Legend(title="", orient="top"))
