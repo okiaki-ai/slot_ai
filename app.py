@@ -122,9 +122,9 @@ df['角台'] = df['台番号'].isin(corner_list).astype(int)
 for i in range(1, 8):
     df[f'{i}日前の差枚'] = df.groupby('台番号')['差枚'].shift(i).fillna(0)
 df['1日前のRB確率'] = df.groupby('台番号')['RB確率'].shift(1).fillna(0.0)
-# 7日間合計：最新日より前の直近7日分の差枚合計（表の合計値と一致）
-df['7日間合計'] = (df['1日前の差枚'] + df['2日前の差枚'] + df['3日前の差枚'] +
-                   df['4日前の差枚'] + df['5日前の差枚'] + df['6日前の差枚'] + df['7日前の差枚'])
+# 7日間合計：最新日を含む直近7日分の差枚合計（表の合計値と一致）
+df['7日間合計'] = (df['差枚'] + df['1日前の差枚'] + df['2日前の差枚'] + df['3日前の差枚'] +
+                   df['4日前の差枚'] + df['5日前の差枚'] + df['6日前の差枚'])
 df['V字回復候補'] = df['1日前の差枚'].apply(lambda x: 1 if -4000 <= x <= -2500 else 0)
 df['回収トラップ'] = df['1日前の差枚'].apply(lambda x: 1 if x > 3000 else 0)
 df['翌日の差枚'] = df.groupby('台番号')['差枚'].shift(-1)
@@ -196,7 +196,7 @@ for rank, (_, row) in enumerate(recommendations.iterrows(), 1):
         )
         # 過去7日間テーブル＋グラフ
         machine_history = df[df['台番号'] == row['台番号']].sort_values('日付')
-        past_history = machine_history[machine_history['日付'] < latest_date].tail(7)
+        past_history = machine_history[machine_history['日付'] <= latest_date].tail(7)
 
         if len(past_history) > 0:
             table_rows = ""
