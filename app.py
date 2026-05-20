@@ -355,19 +355,24 @@ if not high_setting_days.empty:
                 color_scale = alt.Scale(domain=[past_label, curr_label], range=["#7c6fe0","#00a85a"])
                 x_enc = alt.X('期間:O', sort=x_labels, axis=alt.Axis(labelAngle=-30, title=None))
 
+                no_axis = alt.Axis(title=None, labels=False, ticks=False, domain=False)
+
                 bars_chart = alt.Chart(df_bar).mark_bar(opacity=0.55).encode(
                     x=x_enc, xOffset='種別:N',
-                    y=alt.Y('日別差枚:Q', axis=alt.Axis(title=None, labels=False, ticks=False)),
+                    y=alt.Y('日別差枚:Q', axis=no_axis),
                     color=alt.Color('種別:N', scale=color_scale, legend=None)
                 )
-                zero_line = alt.Chart(pd.DataFrame({'y':[0]})).mark_rule(color='#bbb', strokeDash=[3,3]).encode(y='y:Q')
+                zero_line = alt.Chart(pd.DataFrame({'y':[0]})).mark_rule(color='#bbb', strokeDash=[3,3]).encode(
+                    y=alt.Y('y:Q', axis=no_axis)
+                )
                 lines_chart = alt.Chart(df_line).mark_line(size=2.5).encode(
                     x=x_enc,
-                    y=alt.Y('累積差枚:Q', axis=alt.Axis(title=None, labels=False, ticks=False)),
+                    y=alt.Y('累積差枚:Q', axis=no_axis),
                     color=alt.Color('種別:N', scale=color_scale, legend=alt.Legend(title="", orient="top"))
                 )
                 points_chart = alt.Chart(df_line).mark_circle(size=55, opacity=1).encode(
-                    x=x_enc, y=alt.Y('累積差枚:Q'),
+                    x=x_enc,
+                    y=alt.Y('累積差枚:Q', axis=no_axis),
                     color=alt.Color('種別:N', scale=color_scale, legend=None)
                 )
                 chart = alt.layer(bars_chart, zero_line, lines_chart, points_chart).resolve_scale(
