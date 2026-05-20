@@ -176,11 +176,12 @@ for rank, (_, row) in enumerate(recommendations.iterrows(), 1):
     diff_color = "#00a85a" if row['差枚']      >= 0 else "#e03e3e"
     sum_color  = "#00a85a" if row['7日間合計'] >= 0 else "#e03e3e"
     pct = row['明日勝つ確率(%)']
-    medal = "🥇" if rank == 1 else str(rank)
+    medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+    medal = medals.get(rank, f"[{rank}]")
 
     # expanderのラベルをHTMLで組み立て
     label = (
-        f"{medal}  {machine_id}番台　"
+        f"{medal} {machine_id}番台　"
         f"勝率 {pct:.1f}%　｜　"
         f"7日計 {sum_str}　差枚 {diff_str}"
     )
