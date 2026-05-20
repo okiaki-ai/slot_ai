@@ -16,13 +16,6 @@ st.markdown("""
 [data-testid="stSidebar"] h2,
 [data-testid="stSidebar"] h3 { color: #5a4fcf !important; }
 
-/* タイトルをスマホ対応サイズに */
-h1 {
-    color: #5a4fcf !important;
-    font-weight: 700 !important;
-    text-align: center;
-    font-size: clamp(1.1rem, 4vw, 1.8rem) !important;
-}
 h2, h3 { color: #5a4fcf !important; }
 
 [data-testid="stInfo"] {
@@ -46,23 +39,12 @@ h2, h3 { color: #5a4fcf !important; }
 [data-testid="stMetricLabel"] { color: #999 !important; font-size: 0.8rem !important; }
 [data-testid="stMetricValue"] { color: #5a4fcf !important; font-weight: 600 !important; }
 
-/* expanderをカード風に */
 [data-testid="stExpander"] {
     background: #fff !important;
     border: 0.5px solid #e0dff5 !important;
-    border-radius: 10px !important;
-    margin-bottom: 6px !important;
-}
-/* 1位のexpander強調 */
-[data-testid="stExpander"]:first-of-type {
-    border-color: #7c6fe0 !important;
-    border-left: 3px solid #7c6fe0 !important;
-}
-
-/* expanderのサマリー行フォント */
-[data-testid="stExpander"] summary {
-    font-size: 0.88rem !important;
-    padding: 10px 14px !important;
+    border-radius: 12px !important;
+    margin-bottom: 8px !important;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04) !important;
 }
 
 hr { border-color: #e0dff5 !important; }
@@ -75,14 +57,6 @@ hr { border-color: #e0dff5 !important; }
     display: flex; align-items: center; gap: 8px;
 }
 .section-label::after { content: ''; flex: 1; border-top: 0.5px solid #e0dff5; }
-
-/* ランキングカード（expander内部ではなくexpander自体のヘッダー用装飾） */
-.rank-header-content {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 0.88rem;
-}
 </style>
 """, unsafe_allow_html=True)
 
@@ -174,12 +148,12 @@ recommendations = recommendations[recommendations['7日間合計'] <= target_7da
 # ==========================================
 machine_name = selected_machine_label.replace('🎰 ', '')
 st.markdown(
-    f"<h1 style='text-align:center; color:#5a4fcf; font-size:clamp(1.1rem,4vw,1.8rem);'>"
+    f"<h1 style='text-align:center; color:#5a4fcf; font-weight:700; font-size:clamp(1.1rem,4vw,1.8rem);'>"
     f"🎰 {machine_name} 予測AI</h1>",
     unsafe_allow_html=True
 )
 st.markdown(
-    f"<p style='text-align:center; color:#aaa; font-size:0.85rem; margin-top:-0.5rem;'>"
+    f"<p style='text-align:center; color:#aaa; font-size:0.85rem; margin-top:-0.3rem;'>"
     f"予測基準日：{latest_date.strftime('%Y年%m月%d日')}</p>",
     unsafe_allow_html=True
 )
@@ -191,31 +165,42 @@ st.markdown('<div class="section-label">AI予測ランキング</div>', unsafe_a
 st.info(f"💡 7日計 {target_7day_max}枚以下の台から勝率上位 {len(recommendations)}台 を表示")
 
 for rank, (_, row) in enumerate(recommendations.iterrows(), 1):
-    medal = "🥇" if rank == 1 else f"{rank}"
     diff_str = f"+{int(row['差枚'])}" if row['差枚'] >= 0 else str(int(row['差枚']))
-    sum_str = f"+{int(row['7日間合計'])}" if row['7日間合計'] >= 0 else str(int(row['7日間合計']))
+    sum_str  = f"+{int(row['7日間合計'])}" if row['7日間合計'] >= 0 else str(int(row['7日間合計']))
+    diff_color = "#00a85a" if row['差枚'] >= 0 else "#e03e3e"
+    sum_color  = "#00a85a" if row['7日間合計'] >= 0 else "#e03e3e"
     pct = row['明日勝つ確率(%)']
 
-    expander_label = f"{medal}  {int(row['台番号'])}番台　勝率 {pct:.1f}%　｜　7日計 {sum_str}　差枚 {diff_str}"
+    # expander ラベル：画像のカードデザインに合わせたHTML風テキスト
+    expander_label = (
+        f"{rank}  {int(row['台番号'])}番台　"
+        f"勝率 {pct:.1f}%　｜　"
+        f"7日計 {sum_str}　差枚 {diff_str}"
+    )
 
-    with st.expander(expander_label, expanded=(rank == 1)):
+    with st.expander(expander_label, expanded=False):
         # 勝率
         st.markdown(
-            f"<div style='text-align:center; font-size:2rem; font-weight:700; color:#00a85a; margin:0.3rem 0;'>"
-            f"{pct:.1f}%</div>"
+            f"<div style='text-align:center; font-size:2rem; font-weight:700; color:#00a85a; margin:0.3rem 0;'>{pct:.1f}%</div>"
             f"<div style='text-align:center; font-size:0.8rem; color:#aaa; margin-bottom:0.8rem;'>明日の勝率予測</div>",
             unsafe_allow_html=True
         )
 
         # BB / RB / 合成確率
         c1, c2, c3 = st.columns(3)
-        with c1:
-            st.metric("BB回数", f"{int(row['BB'])}回")
-        with c2:
-            st.metric("RB回数", f"{int(row['RB'])}回")
+        with c1: st.metric("BB回数", f"{int(row['BB'])}回")
+        with c2: st.metric("RB回数", f"{int(row['RB'])}回")
         gos_val = f"1/{row['合成確率']:.0f}" if row['合成確率'] > 0 else "-"
-        with c3:
-            st.metric("合成確率", gos_val)
+        with c3: st.metric("合成確率", gos_val)
+
+        # 差枚ラベル（色付き）
+        st.markdown(
+            f"<div style='display:flex; gap:16px; margin:0.6rem 0 0.2rem; font-size:0.88rem;'>"
+            f"<span style='color:#888;'>7日計：<span style='color:{sum_color}; font-weight:600;'>{sum_str}</span></span>"
+            f"<span style='color:#888;'>差枚：<span style='color:{diff_color}; font-weight:600;'>{diff_str}</span></span>"
+            f"</div>",
+            unsafe_allow_html=True
+        )
 
         # 過去7日間グラフ
         machine_num = row['台番号']
@@ -301,7 +286,7 @@ if not high_setting_days.empty:
                                      t_rec['4日前の差枚'],t_rec['3日前の差枚'],t_rec['2日前の差枚'],t_rec['1日前の差枚']]
                     pw_cum = [0]; pw_daily = [0]; p_sum = 0
                     for v in pw_diffs_vals:
-                        p_sum += v; pw_cum.append(p_sum); pw_daily.append(float(v))
+                        p_sum += float(v); pw_cum.append(p_sum); pw_daily.append(float(v))
                     p_sum += float(t_rec['差枚'])
                     pw_cum.append(p_sum); pw_daily.append(float(t_rec['差枚']))
                     if t_idx + 1 < len(p_history):
@@ -330,7 +315,7 @@ if not high_setting_days.empty:
 
         for m in match_results_sorted:
             sum_str = f"+{m['現在の7日計']}" if m['現在の7日計'] >= 0 else str(m['現在の7日計'])
-            exp_label = f"**{m['台番号']}番台**　類似度 {m['類似度']}%　｜　{m['一致した過去の爆発台']} と一致　｜　7日計 {sum_str}"
+            exp_label = f"{m['台番号']}番台　類似度 {m['類似度']}%　｜　{m['一致した過去の爆発台']} と一致　｜　7日計 {sum_str}"
 
             with st.expander(exp_label, expanded=False):
                 st.markdown(f"**▼ 一致した過去の爆発台：{m['一致した過去の爆発台']}**")
@@ -341,61 +326,64 @@ if not high_setting_days.empty:
 
                 st.markdown("---")
 
-                # 波形比較グラフ（棒＋線＋点）軸ラベルなし
-                x_labels = ["起点","6日前","5日前","4日前","3日前","2日前","1日前","現在(前日)","★爆発","🚀翌日"]
+                # 波形比較グラフ（棒＋線＋点、累積テキストなし、0の重複なし）
+                x_labels = ["6日前","5日前","4日前","3日前","2日前","1日前","現在(前日)","★爆発","🚀翌日"]
+
                 cw_diffs = m['cw_diffs']
-                cw_cum = [0]; cw_daily_vals = [0]; c_sum = 0
+                # 現在の累積（起点0を除き6日前からスタート）
+                cw_cum_vals = []
+                c_sum = 0
                 for v in cw_diffs:
-                    c_sum += float(v); cw_cum.append(c_sum); cw_daily_vals.append(float(v))
-                cw_cum.extend([None, None]); cw_daily_vals.extend([None, None])
+                    c_sum += float(v)
+                    cw_cum_vals.append(c_sum)
+                cw_cum_vals.extend([None, None])
+
+                # 過去の累積（起点0を除き6日前からスタート）
+                # pw_cum は [0, v1, v2, ...] なので index1以降を使う
+                pw_cum_trimmed = m['pw_cum'][1:] if len(m['pw_cum']) > 1 else []
+                pw_daily_trimmed = m['pw_daily'][1:] if len(m['pw_daily']) > 1 else []
 
                 past_label = f"過去: {int(m['past_machine'])}番台"
                 curr_label = f"現在: {m['台番号']}番台"
 
-                # 棒グラフ用データ
                 bar_data = []
-                # 線・点グラフ用データ
                 line_data = []
 
                 for i, lx in enumerate(x_labels):
-                    if i < len(m['pw_daily']) and m['pw_daily'][i] is not None:
-                        bar_data.append({'期間': lx, '種別': past_label, '日別差枚': float(m['pw_daily'][i])})
-                    if i < len(cw_daily_vals) and cw_daily_vals[i] is not None:
-                        bar_data.append({'期間': lx, '種別': curr_label, '日別差枚': float(cw_daily_vals[i])})
-                    if i < len(m['pw_cum']) and m['pw_cum'][i] is not None:
-                        line_data.append({'期間': lx, '種別': past_label, '累積差枚': float(m['pw_cum'][i])})
-                    if i < len(cw_cum) and cw_cum[i] is not None:
-                        line_data.append({'期間': lx, '種別': curr_label, '累積差枚': float(cw_cum[i])})
+                    # 棒（日別差枚）
+                    if i < len(pw_daily_trimmed) and pw_daily_trimmed[i] is not None:
+                        bar_data.append({'期間': lx, '種別': past_label, '日別差枚': float(pw_daily_trimmed[i])})
+                    if i < len(cw_diffs):
+                        bar_data.append({'期間': lx, '種別': curr_label, '日別差枚': float(cw_diffs[i])})
+                    # 線・点（累積差枚）
+                    if i < len(pw_cum_trimmed) and pw_cum_trimmed[i] is not None:
+                        line_data.append({'期間': lx, '種別': past_label, '累積差枚': float(pw_cum_trimmed[i])})
+                    if i < len(cw_cum_vals) and cw_cum_vals[i] is not None:
+                        line_data.append({'期間': lx, '種別': curr_label, '累積差枚': float(cw_cum_vals[i])})
 
-                df_bar = pd.DataFrame(bar_data)
+                df_bar  = pd.DataFrame(bar_data)
                 df_line = pd.DataFrame(line_data)
 
-                color_scale = alt.Scale(
-                    domain=[past_label, curr_label],
-                    range=["#7c6fe0", "#00a85a"]
-                )
-                x_axis = alt.Axis(labelAngle=-30, title=None)
+                color_scale = alt.Scale(domain=[past_label, curr_label], range=["#7c6fe0", "#00a85a"])
+                x_enc = alt.X('期間:O', sort=x_labels, axis=alt.Axis(labelAngle=-30, title=None))
 
                 bars_chart = alt.Chart(df_bar).mark_bar(opacity=0.55).encode(
-                    x=alt.X('期間:O', sort=x_labels, axis=x_axis),
+                    x=x_enc,
                     xOffset='種別:N',
                     y=alt.Y('日別差枚:Q', axis=alt.Axis(title=None, labels=False, ticks=False)),
                     color=alt.Color('種別:N', scale=color_scale, legend=None)
                 )
-
                 zero_line = alt.Chart(pd.DataFrame({'y': [0]})).mark_rule(
                     color='#bbb', strokeDash=[3, 3]
                 ).encode(y='y:Q')
-
                 lines_chart = alt.Chart(df_line).mark_line(size=2.5).encode(
-                    x=alt.X('期間:O', sort=x_labels, axis=x_axis),
+                    x=x_enc,
                     y=alt.Y('累積差枚:Q', axis=alt.Axis(title=None, labels=False, ticks=False)),
                     color=alt.Color('種別:N', scale=color_scale,
                                     legend=alt.Legend(title="", orient="top"))
                 )
-
                 points_chart = alt.Chart(df_line).mark_circle(size=55, opacity=1).encode(
-                    x=alt.X('期間:O', sort=x_labels),
+                    x=x_enc,
                     y=alt.Y('累積差枚:Q'),
                     color=alt.Color('種別:N', scale=color_scale, legend=None)
                 )
@@ -403,7 +391,6 @@ if not high_setting_days.empty:
                 chart = alt.layer(bars_chart, zero_line, lines_chart, points_chart).resolve_scale(
                     y='independent'
                 ).properties(height=260)
-
                 st.altair_chart(chart, use_container_width=True)
     else:
         st.info(f"波形一致度 {pattern_strictness}% を超える台はありませんでした。")
