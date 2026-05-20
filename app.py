@@ -193,25 +193,43 @@ for rank, (_, row) in enumerate(recommendations.iterrows(), 1):
             f"<div style='text-align:center; font-size:0.78rem; color:#aaa; margin-bottom:0.8rem;'>明日の勝率予測</div>",
             unsafe_allow_html=True
         )
-        # 差枚ラベル
-        st.markdown(
-            f"<div style='display:flex; gap:20px; margin-bottom:0.8rem; font-size:0.88rem;'>"
-            f"<span style='color:#888;'>7日計：<span style='color:{sum_color}; font-weight:600;'>{sum_str}</span></span>"
-            f"<span style='color:#888;'>差枚：<span style='color:{diff_color}; font-weight:600;'>{diff_str}</span></span>"
-            f"</div>",
-            unsafe_allow_html=True
-        )
-        # BB / RB / 合成確率
-        c1, c2, c3 = st.columns(3)
-        with c1: st.metric("BB回数", f"{int(row['BB'])}回")
-        with c2: st.metric("RB回数", f"{int(row['RB'])}回")
-        gos_val = f"1/{row['合成確率']:.0f}" if row['合成確率'] > 0 else "-"
-        with c3: st.metric("合成確率", gos_val)
-
-        # 過去7日間グラフ
+        # 過去7日間テーブル＋グラフ
         machine_history = df[df['台番号'] == row['台番号']].sort_values('日付')
         past_history = machine_history[machine_history['日付'] < latest_date].tail(7)
+
         if len(past_history) > 0:
+            table_rows = ""
+            for _, hr in past_history.iterrows():
+                d_color = "#00a85a" if hr['差枚'] >= 0 else "#e03e3e"
+                d_sign  = "+" if hr['差枚'] >= 0 else ""
+                gos = f"1/{hr['合成確率']:.0f}" if hr['合成確率'] > 0 else "-"
+                table_rows += (
+                    f"<tr>"
+                    f"<td style='text-align:left; color:#888; font-size:11px; padding:6px 8px; border-bottom:0.5px solid #f0eeff;'>{hr['日付'].strftime('%m/%d')}</td>"
+                    f"<td style='text-align:right; padding:6px 8px; border-bottom:0.5px solid #f0eeff;'>{int(hr['G数']):,}</td>"
+                    f"<td style='text-align:right; padding:6px 8px; border-bottom:0.5px solid #f0eeff;'>{int(hr['BB'])}</td>"
+                    f"<td style='text-align:right; padding:6px 8px; border-bottom:0.5px solid #f0eeff;'>{int(hr['RB'])}</td>"
+                    f"<td style='text-align:right; padding:6px 8px; border-bottom:0.5px solid #f0eeff;'>{gos}</td>"
+                    f"<td style='text-align:right; padding:6px 8px; border-bottom:0.5px solid #f0eeff; color:{d_color}; font-weight:600;'>{d_sign}{int(hr['差枚'])}</td>"
+                    f"</tr>"
+                )
+
+            st.markdown(
+                f"<div style='overflow-x:auto; margin-bottom:12px;'>"
+                f"<table style='width:100%; border-collapse:collapse; font-size:12px;'>"
+                f"<thead><tr style='background:#f8f8fc;'>"
+                f"<th style='text-align:left; padding:6px 8px; color:#aaa; font-weight:500; font-size:10px; border-bottom:0.5px solid #e0dff5;'>日付</th>"
+                f"<th style='text-align:right; padding:6px 8px; color:#aaa; font-weight:500; font-size:10px; border-bottom:0.5px solid #e0dff5;'>回転数</th>"
+                f"<th style='text-align:right; padding:6px 8px; color:#aaa; font-weight:500; font-size:10px; border-bottom:0.5px solid #e0dff5;'>BB</th>"
+                f"<th style='text-align:right; padding:6px 8px; color:#aaa; font-weight:500; font-size:10px; border-bottom:0.5px solid #e0dff5;'>RB</th>"
+                f"<th style='text-align:right; padding:6px 8px; color:#aaa; font-weight:500; font-size:10px; border-bottom:0.5px solid #e0dff5;'>合成確率</th>"
+                f"<th style='text-align:right; padding:6px 8px; color:#aaa; font-weight:500; font-size:10px; border-bottom:0.5px solid #e0dff5;'>差枚</th>"
+                f"</tr></thead>"
+                f"<tbody>{table_rows}</tbody>"
+                f"</table></div>",
+                unsafe_allow_html=True
+            )
+
             chart_data = pd.DataFrame({
                 '日付': past_history['日付'].dt.strftime('%m/%d').tolist(),
                 '差枚': past_history['差枚'].tolist(),
@@ -223,7 +241,7 @@ for rank, (_, row) in enumerate(recommendations.iterrows(), 1):
                 color=alt.Color('色:N',
                     scale=alt.Scale(domain=['プラス','マイナス'], range=['#00a85a','#e03e3e']),
                     legend=None)
-            ).properties(height=180, title="過去7日間の差枚推移")
+            ).properties(height=160, title="差枚推移")
             zero_line = alt.Chart(pd.DataFrame({'y': [0]})).mark_rule(color='#bbb', strokeDash=[3,3]).encode(y='y:Q')
             st.altair_chart(alt.layer(bars, zero_line), use_container_width=True)
         else:
