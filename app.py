@@ -27,33 +27,31 @@ h2, h3 { color: #5a4fcf !important; }
 [data-testid="stMetricLabel"] { color: #999 !important; font-size: 0.8rem !important; }
 [data-testid="stMetricValue"] { color: #5a4fcf !important; font-weight: 600 !important; }
 
-/* 詳細エリア（expander） */
+/* expander全体 */
 [data-testid="stExpander"] {
-    background: #faf9ff !important;
+    background: #fff !important;
     border: 0.5px solid #e0dff5 !important;
-    border-radius: 0 0 12px 12px !important;
-    margin-top: -4px !important;
-    margin-bottom: 10px !important;
+    border-radius: 12px !important;
+    margin-bottom: 8px !important;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04) !important;
+    overflow: hidden !important;
 }
 
-/* ボタンを非表示にしてカードだけ見せる用途のボタン */
-div[data-testid="stButton"] > button {
-    width: 100%;
-    background: #fff;
-    border: 0.5px solid #e0dff5;
-    border-radius: 12px;
-    padding: 0;
-    text-align: left;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.05);
-    margin-bottom: 2px;
-    cursor: pointer;
-    transition: box-shadow 0.15s;
+/* expanderのヘッダー行 */
+[data-testid="stExpander"] summary {
+    background: #fff !important;
+    padding: 12px 16px !important;
+    border-radius: 12px !important;
+    list-style: none !important;
 }
-div[data-testid="stButton"] > button:hover {
-    box-shadow: 0 2px 10px rgba(90,79,207,0.12);
-    border-color: #c0b8f0;
+[data-testid="stExpander"] summary::-webkit-details-marker { display: none; }
+
+/* expanderの中身 */
+[data-testid="stExpander"] > div[data-testid="stExpanderDetails"] {
+    background: #faf9ff !important;
+    border-top: 0.5px solid #e0dff5 !important;
+    padding: 12px 16px !important;
 }
-div[data-testid="stButton"] > button p { display: none; }
 
 hr { border-color: #e0dff5 !important; }
 [data-testid="stSelectbox"] label { color: #5a4fcf !important; font-weight: 600; }
@@ -65,57 +63,8 @@ hr { border-color: #e0dff5 !important; }
     display: flex; align-items: center; gap: 8px;
 }
 .section-label::after { content: ''; flex: 1; border-top: 0.5px solid #e0dff5; }
-
-/* ランキングカード本体 */
-.rank-card {
-    background: #fff;
-    border: 0.5px solid #e0dff5;
-    border-radius: 12px;
-    padding: 13px 16px;
-    margin-bottom: 2px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    cursor: pointer;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.04);
-}
-.rank-card.top1 { border-color: #b0a5f0; border-left: 3px solid #7c6fe0; }
-.rank-left { display: flex; align-items: center; gap: 12px; }
-.rank-circle {
-    width: 26px; height: 26px; border-radius: 50%;
-    background: #f0eeff; display: flex; align-items: center;
-    justify-content: center; font-size: 12px; font-weight: 600;
-    color: #aaa; flex-shrink: 0;
-}
-.rank-circle.gold { background: #fff3cc; color: #b8860b; }
-.rank-name { font-size: 15px; font-weight: 700; color: #1a1a2e; margin-bottom: 3px; }
-.rank-meta { font-size: 12px; color: #aaa; }
-.rank-right { display: flex; align-items: center; gap: 6px; }
-.rank-pct { font-size: 16px; font-weight: 700; color: #00a85a; }
-.rank-arrow { font-size: 18px; color: #ccc; line-height: 1; }
-.val-pos { color: #00a85a; font-weight: 600; }
-.val-neg { color: #e03e3e; font-weight: 600; }
-
-/* 詳細エリア */
-.detail-area {
-    background: #faf9ff;
-    border: 0.5px solid #e0dff5;
-    border-top: none;
-    border-radius: 0 0 12px 12px;
-    padding: 14px 16px 10px;
-    margin-top: -2px;
-    margin-bottom: 10px;
-}
 </style>
 """, unsafe_allow_html=True)
-
-# ==========================================
-# セッションステート初期化
-# ==========================================
-if 'open_ai_cards' not in st.session_state:
-    st.session_state.open_ai_cards = set()
-if 'open_pm_cards' not in st.session_state:
-    st.session_state.open_pm_cards = set()
 
 # ==========================================
 # サイドバー
@@ -222,55 +171,43 @@ st.info(f"💡 7日計 {target_7day_max}枚以下の台から勝率上位 {len(r
 
 for rank, (_, row) in enumerate(recommendations.iterrows(), 1):
     machine_id = int(row['台番号'])
-    diff_str = f"+{int(row['差枚'])}" if row['差枚'] >= 0 else str(int(row['差枚']))
-    sum_str  = f"+{int(row['7日間合計'])}" if row['7日間合計'] >= 0 else str(int(row['7日間合計']))
-    diff_color = "#00a85a" if row['差枚'] >= 0 else "#e03e3e"
+    diff_str  = f"+{int(row['差枚'])}"    if row['差枚']      >= 0 else str(int(row['差枚']))
+    sum_str   = f"+{int(row['7日間合計'])}" if row['7日間合計'] >= 0 else str(int(row['7日間合計']))
+    diff_color = "#00a85a" if row['差枚']      >= 0 else "#e03e3e"
     sum_color  = "#00a85a" if row['7日間合計'] >= 0 else "#e03e3e"
     pct = row['明日勝つ確率(%)']
-    is_open = machine_id in st.session_state.open_ai_cards
-    card_class = "rank-card top1" if rank == 1 else "rank-card"
-    circle_class = "rank-circle gold" if rank == 1 else "rank-circle"
-    arrow = "∨" if is_open else "›"
+    medal = "🥇" if rank == 1 else str(rank)
 
-    st.markdown(f"""
-    <div class="{card_class}">
-      <div class="rank-left">
-        <div class="{circle_class}">{rank}</div>
-        <div>
-          <div class="rank-name">{machine_id}番台</div>
-          <div class="rank-meta">
-            7日計 <span style="color:{sum_color}; font-weight:600;">{sum_str}</span>
-            &nbsp;&nbsp;差枚 <span style="color:{diff_color}; font-weight:600;">{diff_str}</span>
-          </div>
-        </div>
-      </div>
-      <div class="rank-right">
-        <div class="rank-pct">{pct:.1f}%</div>
-        <div class="rank-arrow">{arrow}</div>
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
+    # expanderのラベルをHTMLで組み立て
+    label = (
+        f"{medal}  {machine_id}番台　"
+        f"勝率 {pct:.1f}%　｜　"
+        f"7日計 {sum_str}　差枚 {diff_str}"
+    )
 
-    if st.button("　", key=f"ai_toggle_{machine_id}_{rank}", help=f"{machine_id}番台の詳細"):
-        if machine_id in st.session_state.open_ai_cards:
-            st.session_state.open_ai_cards.discard(machine_id)
-        else:
-            st.session_state.open_ai_cards.add(machine_id)
-        st.rerun()
-
-    if is_open:
-        st.markdown('<div class="detail-area">', unsafe_allow_html=True)
+    with st.expander(label, expanded=False):
+        # 勝率
         st.markdown(
             f"<div style='text-align:center; font-size:1.8rem; font-weight:700; color:#00a85a; margin:0.2rem 0;'>{pct:.1f}%</div>"
             f"<div style='text-align:center; font-size:0.78rem; color:#aaa; margin-bottom:0.8rem;'>明日の勝率予測</div>",
             unsafe_allow_html=True
         )
+        # 差枚ラベル
+        st.markdown(
+            f"<div style='display:flex; gap:20px; margin-bottom:0.8rem; font-size:0.88rem;'>"
+            f"<span style='color:#888;'>7日計：<span style='color:{sum_color}; font-weight:600;'>{sum_str}</span></span>"
+            f"<span style='color:#888;'>差枚：<span style='color:{diff_color}; font-weight:600;'>{diff_str}</span></span>"
+            f"</div>",
+            unsafe_allow_html=True
+        )
+        # BB / RB / 合成確率
         c1, c2, c3 = st.columns(3)
         with c1: st.metric("BB回数", f"{int(row['BB'])}回")
         with c2: st.metric("RB回数", f"{int(row['RB'])}回")
         gos_val = f"1/{row['合成確率']:.0f}" if row['合成確率'] > 0 else "-"
         with c3: st.metric("合成確率", gos_val)
 
+        # 過去7日間グラフ
         machine_history = df[df['台番号'] == row['台番号']].sort_values('日付')
         past_history = machine_history[machine_history['日付'] < latest_date].tail(7)
         if len(past_history) > 0:
@@ -290,7 +227,6 @@ for rank, (_, row) in enumerate(recommendations.iterrows(), 1):
             st.altair_chart(alt.layer(bars, zero_line), use_container_width=True)
         else:
             st.caption("グラフ表示に必要なデータが不足しています。")
-        st.markdown('</div>', unsafe_allow_html=True)
 
 # ==========================================
 # パターンマッチング予測
@@ -379,45 +315,15 @@ if not high_setting_days.empty:
         st.success(f"🔥 波形が一致する台を {len(match_results_sorted)}台 発見！")
 
         for m in match_results_sorted:
-            machine_id = m['台番号']
             sum_str = f"+{m['現在の7日計']}" if m['現在の7日計'] >= 0 else str(m['現在の7日計'])
-            sum_color = "#00a85a" if m['現在の7日計'] >= 0 else "#e03e3e"
-            is_open_pm = machine_id in st.session_state.open_pm_cards
-            arrow = "∨" if is_open_pm else "›"
+            exp_label = f"{m['台番号']}番台　類似度 {m['類似度']}%　｜　{m['一致した過去の爆発台']} と一致　｜　7日計 {sum_str}"
 
-            st.markdown(f"""
-            <div class="rank-card">
-              <div class="rank-left">
-                <div class="rank-circle" style="width:auto; border-radius:6px; padding:0 6px; font-size:11px; background:#f0eeff; color:#7c6fe0;">{m['類似度']}%</div>
-                <div>
-                  <div class="rank-name">{machine_id}番台</div>
-                  <div class="rank-meta">
-                    {m['一致した過去の爆発台']} と一致
-                    &nbsp;&nbsp;7日計 <span style="color:{sum_color}; font-weight:600;">{sum_str}</span>
-                  </div>
-                </div>
-              </div>
-              <div class="rank-right">
-                <div class="rank-arrow">{arrow}</div>
-              </div>
-            </div>
-            """, unsafe_allow_html=True)
-
-            if st.button("　", key=f"pm_toggle_{machine_id}", help=f"{machine_id}番台のパターン詳細"):
-                if machine_id in st.session_state.open_pm_cards:
-                    st.session_state.open_pm_cards.discard(machine_id)
-                else:
-                    st.session_state.open_pm_cards.add(machine_id)
-                st.rerun()
-
-            if is_open_pm:
-                st.markdown('<div class="detail-area">', unsafe_allow_html=True)
+            with st.expander(exp_label, expanded=False):
                 st.markdown(f"**一致した過去の爆発台：{m['一致した過去の爆発台']}**")
                 c1, c2, c3 = st.columns(3)
                 with c1: st.metric("差枚（爆発日）", f"{m['past_diff']:+}枚")
                 with c2: st.metric("BB回数", f"{m['past_BB']}回")
                 with c3: st.metric("RB回数", f"{m['past_RB']}回")
-
                 st.markdown("---")
 
                 x_labels = ["6日前","5日前","4日前","3日前","2日前","1日前","現在(前日)","★爆発","🚀翌日"]
@@ -427,13 +333,13 @@ if not high_setting_days.empty:
                     c_sum += float(v); cw_cum_vals.append(c_sum)
                 cw_cum_vals.extend([None, None])
 
-                pw_cum_trimmed  = m['pw_cum'][1:]  if len(m['pw_cum']) > 1  else []
+                pw_cum_trimmed   = m['pw_cum'][1:]  if len(m['pw_cum'])  > 1 else []
                 pw_daily_trimmed = m['pw_daily'][1:] if len(m['pw_daily']) > 1 else []
 
                 past_label = f"過去: {int(m['past_machine'])}番台"
-                curr_label = f"現在: {machine_id}番台"
-
+                curr_label = f"現在: {m['台番号']}番台"
                 bar_data = []; line_data = []
+
                 for i, lx in enumerate(x_labels):
                     if i < len(pw_daily_trimmed) and pw_daily_trimmed[i] is not None:
                         bar_data.append({'期間': lx, '種別': past_label, '日別差枚': float(pw_daily_trimmed[i])})
@@ -461,15 +367,13 @@ if not high_setting_days.empty:
                     color=alt.Color('種別:N', scale=color_scale, legend=alt.Legend(title="", orient="top"))
                 )
                 points_chart = alt.Chart(df_line).mark_circle(size=55, opacity=1).encode(
-                    x=x_enc,
-                    y=alt.Y('累積差枚:Q'),
+                    x=x_enc, y=alt.Y('累積差枚:Q'),
                     color=alt.Color('種別:N', scale=color_scale, legend=None)
                 )
                 chart = alt.layer(bars_chart, zero_line, lines_chart, points_chart).resolve_scale(
                     y='independent'
                 ).properties(height=260)
                 st.altair_chart(chart, use_container_width=True)
-                st.markdown('</div>', unsafe_allow_html=True)
     else:
         st.info(f"波形一致度 {pattern_strictness}% を超える台はありませんでした。")
 else:
