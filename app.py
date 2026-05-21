@@ -82,7 +82,7 @@ selected_machine_label = st.sidebar.selectbox("🕹️ 機種を選択", list(MA
 selected_sheet = MACHINE_SHEET_MAP[selected_machine_label]
 st.sidebar.markdown("---")
 target_7day_max = st.sidebar.slider("① 7日計の上限", min_value=-5000, max_value=2000, value=0, step=100)
-target_g_max = st.sidebar.slider("② 基準日の回転数（上限）", min_value=1000, max_value=15000, value=15000, step=100)
+target_g_min = st.sidebar.slider("② 基準日の回転数（下限）", min_value=0, max_value=10000, value=0, step=100)
 target_diff_min = st.sidebar.slider("③ 基準日の差枚（下限）", min_value=-5000, max_value=2000, value=-5000, step=100)
 top_n_picks = st.sidebar.slider("④ ピックアップ台数", min_value=1, max_value=15, value=5, step=1)
 pattern_strictness = st.sidebar.slider("⑤ 波形の一致度", min_value=70, max_value=99, value=90, step=1)
@@ -151,7 +151,7 @@ safe_latest_df['明日勝つ確率(%)'] = model.predict_proba(safe_latest_df[fea
 recommendations = safe_latest_df.sort_values('明日勝つ確率(%)', ascending=False)
 recommendations = recommendations[
     (recommendations['7日間合計'] <= target_7day_max) &
-    (recommendations['G数'] <= target_g_max) &
+    (recommendations['G数'] >= target_g_min) &
     (recommendations['差枚'] >= target_diff_min)
 ].head(top_n_picks)
 
@@ -287,7 +287,7 @@ if not high_setting_days.empty:
     match_results = []
     pm_candidates = safe_latest_df[
         (safe_latest_df['7日間合計'] <= target_7day_max) &
-        (safe_latest_df['G数'] <= target_g_max) &
+        (safe_latest_df['G数'] >= target_g_min) &
         (safe_latest_df['差枚'] >= target_diff_min)
     ]
 
