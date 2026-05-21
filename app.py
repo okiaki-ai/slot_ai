@@ -90,6 +90,7 @@ pattern_strictness = st.sidebar.slider("⑤ 波形の一致度", min_value=70, m
 # ==========================================
 # データ読み込み
 # ==========================================
+@st.cache_data(ttl=600)
 def load_data(sheet_name):
     try:
         base_url = st.secrets[f"spreadsheet_url_{sheet_name}"]
@@ -109,34 +110,42 @@ def load_data(sheet_name):
     df['日付'] = pd.to_datetime(df['日付'])
     return df.sort_values(['台番号', '日付'])
 
+@st.cache_data(ttl=600)
+def prepare_data(sheet_name):
+    df = load_data(sheet_name)
+    df['日'] = df['日付'].dt.day
+    df['還元日'] = df['日'].apply(lambda x: 1 if x == 3 or (1 <= x <= 5) or (27 <= x <= 31) else 0)
+    df['警戒日'] = df['日'].apply(lambda x: 1 if 10 <= x <= 20 else 0)
+    corner_list = [521, 540, 541, 560]
+    df['角台'] = df['台番号'].isin(corner_list).astype(int)
+    for i in range(1, 8):
+        df[f'{i}日前の差枚'] = df.groupby('台番号')['差枚'].shift(i).fillna(0)
+    df['1日前のRB確率'] = df.groupby('台番号')['RB確率'].shift(1).fillna(0.0)
+    df['7日間合計'] = (df['差枚'] + df['1日前の差枚'] + df['2日前の差枚'] + df['3日前の差枚'] +
+                       df['4日前の差枚'] + df['5日前の差枚'] + df['6日前の差枚'])
+    df['V字回復候補'] = df['1日前の差枚'].apply(lambda x: 1 if -4000 <= x <= -2500 else 0)
+    df['回収トラップ'] = df['1日前の差枚'].apply(lambda x: 1 if x > 3000 else 0)
+    df['翌日の差枚'] = df.groupby('台番号')['差枚'].shift(-1)
+    df['翌日勝つか'] = (df['翌日の差枚'] > 0).astype(int)
+    return df
+
+@st.cache_resource
+def train_model(sheet_name):
+    df = prepare_data(sheet_name)
+    features = ['G数','差枚','BB','RB','合成確率','還元日','警戒日','角台','V字回復候補','回収トラップ',
+                '1日前の差枚','2日前の差枚','3日前の差枚','4日前の差枚','5日前の差枚','6日前の差枚','7日前の差枚']
+    train_df = df.dropna(subset=['翌日の差枚'])
+    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    model.fit(train_df[features], train_df['翌日勝つか'])
+    return model
+
 with st.spinner('データを読み込み中...'):
-    df = load_data(selected_sheet)
+    df = prepare_data(selected_sheet)
+    model = train_model(selected_sheet)
     latest_date = df['日付'].max()
 
-# ==========================================
-# AI学習
-# ==========================================
-df['日'] = df['日付'].dt.day
-df['還元日'] = df['日'].apply(lambda x: 1 if x == 3 or (1 <= x <= 5) or (27 <= x <= 31) else 0)
-df['警戒日'] = df['日'].apply(lambda x: 1 if 10 <= x <= 20 else 0)
-corner_list = [521, 540, 541, 560]
-df['角台'] = df['台番号'].isin(corner_list).astype(int)
-for i in range(1, 8):
-    df[f'{i}日前の差枚'] = df.groupby('台番号')['差枚'].shift(i).fillna(0)
-df['1日前のRB確率'] = df.groupby('台番号')['RB確率'].shift(1).fillna(0.0)
-# 7日間合計：最新日を含む直近7日分の差枚合計（表の合計値と一致）
-df['7日間合計'] = (df['差枚'] + df['1日前の差枚'] + df['2日前の差枚'] + df['3日前の差枚'] +
-                   df['4日前の差枚'] + df['5日前の差枚'] + df['6日前の差枚'])
-df['V字回復候補'] = df['1日前の差枚'].apply(lambda x: 1 if -4000 <= x <= -2500 else 0)
-df['回収トラップ'] = df['1日前の差枚'].apply(lambda x: 1 if x > 3000 else 0)
-df['翌日の差枚'] = df.groupby('台番号')['差枚'].shift(-1)
-df['翌日勝つか'] = (df['翌日の差枚'] > 0).astype(int)
-
-train_df = df.dropna(subset=['翌日の差枚'])
 features = ['G数','差枚','BB','RB','合成確率','還元日','警戒日','角台','V字回復候補','回収トラップ',
             '1日前の差枚','2日前の差枚','3日前の差枚','4日前の差枚','5日前の差枚','6日前の差枚','7日前の差枚']
-model = RandomForestClassifier(n_estimators=100, random_state=42)
-model.fit(train_df[features], train_df['翌日勝つか'])
 
 latest_df = df[df['日付'] == latest_date].copy()
 exclude_condition = (
