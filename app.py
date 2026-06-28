@@ -430,9 +430,9 @@ if not high_setting_days.empty:
                     y=alt.Y('累積差枚:Q', axis=no_axis),
                     color=alt.Color('種別:N', scale=color_scale, legend=None)
                 )
-                chart = alt.layer(bars_chart, zero_line, lines_chart, points_chart).resolve_scale(
-                    y='independent'
-                ).properties(height=260)
+                
+                # 🌟 変更：.resolve_scale(y='independent') を削除し、Y軸のスケールを共通化
+                chart = alt.layer(bars_chart, zero_line, lines_chart, points_chart).properties(height=260)
                 st.altair_chart(chart, use_container_width=True)
     else:
         st.info(f"波形一致度 {pattern_strictness}% を超える台はありませんでした。")
