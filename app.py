@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from sklearn.ensemble import RandomForestClassifier
+import lightgbm as lgb
 import altair as alt
 
 st.set_page_config(page_title="ジャグラー予測AI", layout="wide", page_icon="🎰")
@@ -114,6 +114,13 @@ def load_data(sheet_name):
 def prepare_data(sheet_name):
     df = load_data(sheet_name)
     df['日'] = df['日付'].dt.day
+    
+    # 🌟 特徴量追加：曜日データ（0:月曜 〜 6:日曜）
+    df['曜日'] = df['日付'].dt.dayofweek
+    
+    # 🌟 特徴量追加：BB/RB比率（BBに対してどれくらいRBが引けているか）
+    df['BB_RB比率'] = df['RB'] / (df['BB'] + 1.0)
+    
     df['還元日'] = df['日'].apply(lambda x: 1 if x == 3 or (1 <= x <= 5) or (27 <= x <= 31) else 0)
     df['警戒日'] = df['日'].apply(lambda x: 1 if 10 <= x <= 20 else 0)
     corner_list = [521, 540, 541, 560]
@@ -126,16 +133,23 @@ def prepare_data(sheet_name):
     df['V字回復候補'] = df['1日前の差枚'].apply(lambda x: 1 if -4000 <= x <= -2500 else 0)
     df['回収トラップ'] = df['1日前の差枚'].apply(lambda x: 1 if x > 3000 else 0)
     df['翌日の差枚'] = df.groupby('台番号')['差枚'].shift(-1)
-    df['翌日勝つか'] = (df['翌日の差枚'] > 0).astype(int)
+    
+    # 🌟 変更：予測のゴールを「+500枚以上」に厳格化
+    df['翌日勝つか'] = (df['翌日の差枚'] >= 500).astype(int)
+    
     return df
 
 @st.cache_resource
 def train_model(sheet_name):
     df = prepare_data(sheet_name)
+    # 🌟 特徴量リストに「曜日」と「BB_RB比率」を追加
     features = ['G数','差枚','BB','RB','合成確率','還元日','警戒日','角台','V字回復候補','回収トラップ',
-                '1日前の差枚','2日前の差枚','3日前の差枚','4日前の差枚','5日前の差枚','6日前の差枚','7日前の差枚']
+                '1日前の差枚','2日前の差枚','3日前の差枚','4日前の差枚','5日前の差枚','6日前の差枚','7日前の差枚',
+                '曜日','BB_RB比率']
     train_df = df.dropna(subset=['翌日の差枚'])
-    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    
+    # 🌟 変更：LightGBMモデルを採用
+    model = lgb.LGBMClassifier(n_estimators=100, random_state=42)
     model.fit(train_df[features], train_df['翌日勝つか'])
     return model
 
@@ -144,8 +158,10 @@ with st.spinner('データを読み込み中...'):
     model = train_model(selected_sheet)
     latest_date = df['日付'].max()
 
+# 🌟 特徴量リストをここでも更新
 features = ['G数','差枚','BB','RB','合成確率','還元日','警戒日','角台','V字回復候補','回収トラップ',
-            '1日前の差枚','2日前の差枚','3日前の差枚','4日前の差枚','5日前の差枚','6日前の差枚','7日前の差枚']
+            '1日前の差枚','2日前の差枚','3日前の差枚','4日前の差枚','5日前の差枚','6日前の差枚','7日前の差枚',
+            '曜日','BB_RB比率']
 
 latest_df = df[df['日付'] == latest_date].copy()
 exclude_condition = (
@@ -197,9 +213,9 @@ for rank, (_, row) in enumerate(recommendations.iterrows(), 1):
 
     # expanderのラベルをHTMLで組み立て
     label = (
-        f"{medal} {machine_id}番台　"
-        f"勝率 {pct:.1f}%　｜　"
-        f"7日計 {sum_str}　差枚 {diff_str}"
+        f"{medal} {machine_id}番台 "
+        f"勝率 {pct:.1f}% ｜ "
+        f"7日計 {sum_str} 差枚 {diff_str}"
     )
 
     with st.expander(label, expanded=False):
@@ -355,7 +371,7 @@ if not high_setting_days.empty:
 
         for m in match_results_sorted:
             sum_str = f"+{m['現在の7日計']}" if m['現在の7日計'] >= 0 else str(m['現在の7日計'])
-            exp_label = f"{m['台番号']}番台　類似度 {m['類似度']}%　｜　{m['一致した過去の爆発台']} と一致　｜　7日計 {sum_str}"
+            exp_label = f"{m['台番号']}番台 類似度 {m['類似度']}% ｜ {m['一致した過去の爆発台']} と一致 ｜ 7日計 {sum_str}"
 
             with st.expander(exp_label, expanded=False):
                 st.markdown(f"**一致した過去の爆発台：{m['一致した過去の爆発台']}**")
