@@ -80,20 +80,16 @@ MACHINE_SHEET_MAP = {
 }
 # 🌟 3機種プール学習用の機種コード
 MACHINE_CODE = {"maijag5": 0, "gojag": 1, "happy": 2}
-# 🌟 島が小さい機種（約10台）: バックテストの結果、フィルターなし・上位3台固定が最良
-SMALL_MACHINES = {"gojag", "happy"}
-SMALL_TOP_N = 3
+# 🌟 除外条件A〜Cの差枚しきい値（2026-08-02のバックテストで 1000→500 に変更）
+EXCLUDE_DIFF = 500
 
 selected_machine_label = st.sidebar.selectbox("🕹️ 機種を選択", list(MACHINE_SHEET_MAP.keys()))
 selected_sheet = MACHINE_SHEET_MAP[selected_machine_label]
-is_small_island = selected_sheet in SMALL_MACHINES
 st.sidebar.markdown("---")
-if is_small_island:
-    st.sidebar.info("この機種は島が小さいため、検証結果に基づき①〜④は使わず、島全体からAIが直接上位3台を選びます。")
-target_7day_max = st.sidebar.slider("① 7日計の上限", min_value=-5000, max_value=2000, value=0, step=100, disabled=is_small_island)
-target_g_min = st.sidebar.slider("② 基準日の回転数（下限）", min_value=0, max_value=10000, value=0, step=100, disabled=is_small_island)
-target_diff_max = st.sidebar.slider("③ 基準日の差枚（上限）", min_value=-5000, max_value=2000, value=0, step=100, disabled=is_small_island)
-top_n_picks = st.sidebar.slider("④ ピックアップ台数", min_value=1, max_value=15, value=5, step=1, disabled=is_small_island)
+target_7day_max = st.sidebar.slider("① 7日計の上限", min_value=-5000, max_value=2000, value=0, step=100)
+target_g_min = st.sidebar.slider("② 基準日の回転数（下限）", min_value=0, max_value=10000, value=0, step=100)
+target_diff_max = st.sidebar.slider("③ 基準日の差枚（上限）", min_value=-5000, max_value=2000, value=0, step=100)
+top_n_picks = st.sidebar.slider("④ ピックアップ台数", min_value=1, max_value=15, value=5, step=1)
 pattern_strictness = st.sidebar.slider("⑤ 波形の一致度", min_value=70, max_value=99, value=90, step=1)
 
 # ==========================================
@@ -184,9 +180,9 @@ with st.spinner('データを読み込み中...'):
 
 latest_df = df[df['日付'] == latest_date].copy()
 exclude_condition = (
-    (latest_df['差枚'] >= 1000) |
-    (latest_df['1日前の差枚'] >= 1000) |
-    (latest_df['2日前の差枚'] >= 1000) |
+    (latest_df['差枚'] >= EXCLUDE_DIFF) |
+    (latest_df['1日前の差枚'] >= EXCLUDE_DIFF) |
+    (latest_df['2日前の差枚'] >= EXCLUDE_DIFF) |
     ((latest_df['RB確率'] > 0) & (latest_df['RB確率'] <= 310.0)) |
     ((latest_df['1日前のRB確率'] > 0) & (latest_df['1日前のRB確率'] <= 310.0))
 )
@@ -194,16 +190,13 @@ safe_latest_df = latest_df[~exclude_condition].copy()
 safe_latest_df['明日勝つ確率(%)'] = model_win.predict_proba(safe_latest_df[FEATURES])[:, 1] * 100
 safe_latest_df['高設定挙動率(%)'] = model_beh.predict_proba(safe_latest_df[FEATURES])[:, 1] * 100
 
-if is_small_island:
-    # 🌟 小さい島はフィルターを通さず島全体から高設定挙動率の上位3台（バックテスト検証済み）
-    recommendations = safe_latest_df.sort_values('高設定挙動率(%)', ascending=False).head(SMALL_TOP_N)
-else:
-    recommendations = safe_latest_df.sort_values('明日勝つ確率(%)', ascending=False)
-    recommendations = recommendations[
-        (recommendations['7日間合計'] <= target_7day_max) &
-        (recommendations['G数'] >= target_g_min) &
-        (recommendations['差枚'] <= target_diff_max)
-    ].head(top_n_picks)
+# 🌟 3機種とも同じルール（除外条件 → 絞り込み①〜③ → 勝率順に④台）で選定する
+recommendations = safe_latest_df.sort_values('明日勝つ確率(%)', ascending=False)
+recommendations = recommendations[
+    (recommendations['7日間合計'] <= target_7day_max) &
+    (recommendations['G数'] >= target_g_min) &
+    (recommendations['差枚'] <= target_diff_max)
+].head(top_n_picks)
 
 # ==========================================
 # タイトル
@@ -224,8 +217,8 @@ st.markdown(
 # AI予測ランキング
 # ==========================================
 st.markdown('<div class="section-label">AI予測ランキング</div>', unsafe_allow_html=True)
-if is_small_island:
-    st.info(f"💡 島全体からAIが直接選んだ 高設定挙動率 上位 {len(recommendations)}台 を表示（この機種はフィルターなしが最良と検証済み）")
+if len(recommendations) == 0:
+    st.info("💡 今日は条件に合う台がありませんでした。サイドバーの①〜③をゆるめると候補が増えます。")
 else:
     st.info(f"💡 7日計 {target_7day_max}枚以下の台から勝率上位 {len(recommendations)}台 を表示")
 
@@ -240,19 +233,11 @@ for rank, (_, row) in enumerate(recommendations.iterrows(), 1):
     medals = {1: "🥇", 2: "🥈", 3: "🥉"}
     medal = medals.get(rank, f"[{rank}]")
 
-    # expanderのラベルをHTMLで組み立て（小さい島は挙動率を先頭に）
-    if is_small_island:
-        label = (
-            f"{medal} {machine_id}番台 "
-            f"挙動 {beh:.1f}% 勝率 {pct:.1f}% ｜ "
-            f"7日計 {sum_str} 差枚 {diff_str}"
-        )
-    else:
-        label = (
-            f"{medal} {machine_id}番台 "
-            f"勝率 {pct:.1f}% ｜ "
-            f"7日計 {sum_str} 差枚 {diff_str}"
-        )
+    label = (
+        f"{medal} {machine_id}番台 "
+        f"勝率 {pct:.1f}% ｜ "
+        f"7日計 {sum_str} 差枚 {diff_str}"
+    )
 
     with st.expander(label, expanded=False):
         # 勝率と高設定挙動率を並べて表示
@@ -352,14 +337,11 @@ if not high_setting_days.empty:
             })
 
     match_results = []
-    if is_small_island:
-        pm_candidates = safe_latest_df
-    else:
-        pm_candidates = safe_latest_df[
-            (safe_latest_df['7日間合計'] <= target_7day_max) &
-            (safe_latest_df['G数'] >= target_g_min) &
-            (safe_latest_df['差枚'] <= target_diff_max)
-        ]
+    pm_candidates = safe_latest_df[
+        (safe_latest_df['7日間合計'] <= target_7day_max) &
+        (safe_latest_df['G数'] >= target_g_min) &
+        (safe_latest_df['差枚'] <= target_diff_max)
+    ]
 
     for _, row in pm_candidates.iterrows():
         cw_diffs = [row['6日前の差枚'],row['5日前の差枚'],row['4日前の差枚'],
