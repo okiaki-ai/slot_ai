@@ -83,8 +83,22 @@ MACHINE_CODE = {"maijag5": 0, "gojag": 1, "happy": 2}
 # 🌟 除外条件A〜Cの差枚しきい値（2026-08-02のバックテストで 1000→500 に変更）
 EXCLUDE_DIFF = 500
 
+# 🌟 +1000枚狙いモードの条件（2026-08-02の実データ分析で決定）
+#    「7日計が沈んでいる台ほど翌日に跳ねる」という関係を直接条件にしたもの。
+#    マイジャグは稼働が高く条件を厳しくできるが、ゴージャグ/ハッピーは島10台・稼働も低いため
+#    同じ数値だと該当が月に数日しか出ず機能しない。検証のうえ機種ごとに数値を調整している。
+TARGET1000_RULES = {
+    "maijag5": {"7日計": -3500, "差枚": -1000, "G数": 5000},
+    "gojag":   {"7日計": -2000, "差枚": -500,  "G数": 0},
+    "happy":   {"7日計": -2000, "差枚": -500,  "G数": 0},
+}
+
 selected_machine_label = st.sidebar.selectbox("🕹️ 機種を選択", list(MACHINE_SHEET_MAP.keys()))
 selected_sheet = MACHINE_SHEET_MAP[selected_machine_label]
+st.sidebar.markdown("---")
+target_1000_mode = st.sidebar.checkbox(
+    "🎯 +1000枚狙いモード", value=False,
+    help="翌日+1000枚以上を狙える条件だけに絞り込みます。該当する台がない日もあります。")
 st.sidebar.markdown("---")
 target_7day_max = st.sidebar.slider("① 7日計の上限", min_value=-5000, max_value=2000, value=0, step=100)
 target_g_min = st.sidebar.slider("② 基準日の回転数（下限）", min_value=0, max_value=10000, value=0, step=100)
@@ -179,12 +193,11 @@ with st.spinner('データを読み込み中...'):
     latest_date = df['日付'].max()
 
 latest_df = df[df['日付'] == latest_date].copy()
+# 🌟 除外条件（2026-08-02の検証でRB確率による除外D・Eを廃止。成績が下がり候補も減っていたため）
 exclude_condition = (
     (latest_df['差枚'] >= EXCLUDE_DIFF) |
     (latest_df['1日前の差枚'] >= EXCLUDE_DIFF) |
-    (latest_df['2日前の差枚'] >= EXCLUDE_DIFF) |
-    ((latest_df['RB確率'] > 0) & (latest_df['RB確率'] <= 310.0)) |
-    ((latest_df['1日前のRB確率'] > 0) & (latest_df['1日前のRB確率'] <= 310.0))
+    (latest_df['2日前の差枚'] >= EXCLUDE_DIFF)
 )
 safe_latest_df = latest_df[~exclude_condition].copy()
 safe_latest_df['明日勝つ確率(%)'] = model_win.predict_proba(safe_latest_df[FEATURES])[:, 1] * 100
@@ -196,7 +209,16 @@ recommendations = recommendations[
     (recommendations['7日間合計'] <= target_7day_max) &
     (recommendations['G数'] >= target_g_min) &
     (recommendations['差枚'] <= target_diff_max)
-].head(top_n_picks)
+]
+# 🌟 +1000枚狙いモード：①〜③の上にさらに条件を重ねる
+rule_1000 = TARGET1000_RULES[selected_sheet]
+if target_1000_mode:
+    recommendations = recommendations[
+        (recommendations['7日間合計'] <= rule_1000['7日計']) &
+        (recommendations['差枚'] <= rule_1000['差枚']) &
+        (recommendations['G数'] >= rule_1000['G数'])
+    ]
+recommendations = recommendations.head(top_n_picks)
 
 # ==========================================
 # タイトル
@@ -217,7 +239,16 @@ st.markdown(
 # AI予測ランキング
 # ==========================================
 st.markdown('<div class="section-label">AI予測ランキング</div>', unsafe_allow_html=True)
-if len(recommendations) == 0:
+if target_1000_mode:
+    cond_text = f"7日計 {rule_1000['7日計']}枚以下 かつ 基準日の差枚 {rule_1000['差枚']}枚以下"
+    if rule_1000['G数'] > 0:
+        cond_text += f" かつ 回転数 {rule_1000['G数']:,}以上"
+    if len(recommendations) == 0:
+        st.info(f"🎯 +1000枚狙いモード：今日は該当する台がありませんでした（条件：{cond_text}）。"
+                "この条件は毎日出るものではありません。チェックを外すと通常の予測に戻ります。")
+    else:
+        st.success(f"🎯 +1000枚狙いモード：条件（{cond_text}）を満たす {len(recommendations)}台 を表示")
+elif len(recommendations) == 0:
     st.info("💡 今日は条件に合う台がありませんでした。サイドバーの①〜③をゆるめると候補が増えます。")
 else:
     st.info(f"💡 7日計 {target_7day_max}枚以下の台から勝率上位 {len(recommendations)}台 を表示")
