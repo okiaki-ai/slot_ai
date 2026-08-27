@@ -77,9 +77,12 @@ MACHINE_SHEET_MAP = {
     "🎰 マイジャグラー5": "maijag5",
     "🎰 ゴーゴージャグラー": "gojag",
     "🎰 ハッピージャグラー": "happy",
+    "🎰 ネオアイムジャグラーEX": "neoim",
+    "🎰 ジャグラーガールズ": "girls",
+    "🎰 ファンキージャグラー2": "funky2",
 }
-# 🌟 3機種プール学習用の機種コード
-MACHINE_CODE = {"maijag5": 0, "gojag": 1, "happy": 2}
+# 🌟 3機種プール学習用の機種コード（2026-08-28 3機種追加）
+MACHINE_CODE = {"maijag5": 0, "gojag": 1, "happy": 2, "neoim": 3, "girls": 4, "funky2": 5}
 # 🌟 除外条件A〜Cの差枚しきい値（2026-08-02のバックテストで 1000→500 に変更）
 EXCLUDE_DIFF = 500
 
@@ -87,11 +90,18 @@ EXCLUDE_DIFF = 500
 #    「7日計が沈んでいる台ほど翌日に跳ねる」という関係を直接条件にしたもの。
 #    マイジャグは稼働が高く条件を厳しくできるが、ゴージャグ/ハッピーは島10台・稼働も低いため
 #    同じ数値だと該当が月に数日しか出ず機能しない。検証のうえ機種ごとに数値を調整している。
+#    2026-08-28追加の3機種はまだデータが溜まっておらず条件を検証できないため、
+#    到達不可能な数値にして「該当なし」表示にしている（データが溜まったら見直す）。
 TARGET1000_RULES = {
     "maijag5": {"7日計": -3500, "差枚": -1000, "G数": 5000},
     "gojag":   {"7日計": -2000, "差枚": -500,  "G数": 0},
     "happy":   {"7日計": -2000, "差枚": -500,  "G数": 0},
+    "neoim":   {"7日計": -999999, "差枚": -999999, "G数": 0},
+    "girls":   {"7日計": -999999, "差枚": -999999, "G数": 0},
+    "funky2":  {"7日計": -999999, "差枚": -999999, "G数": 0},
 }
+# 🌟 +1000枚狙いモードの条件が未検証の機種（データが溜まったらここから外す）
+TARGET1000_PENDING_MACHINES = {"neoim", "girls", "funky2"}
 
 selected_machine_label = st.sidebar.selectbox("🕹️ 機種を選択", list(MACHINE_SHEET_MAP.keys()))
 selected_sheet = MACHINE_SHEET_MAP[selected_machine_label]
@@ -240,14 +250,19 @@ st.markdown(
 # ==========================================
 st.markdown('<div class="section-label">AI予測ランキング</div>', unsafe_allow_html=True)
 if target_1000_mode:
-    cond_text = f"7日計 {rule_1000['7日計']}枚以下 かつ 基準日の差枚 {rule_1000['差枚']}枚以下"
-    if rule_1000['G数'] > 0:
-        cond_text += f" かつ 回転数 {rule_1000['G数']:,}以上"
-    if len(recommendations) == 0:
-        st.info(f"🎯 +1000枚狙いモード：今日は該当する台がありませんでした（条件：{cond_text}）。"
-                "この条件は毎日出るものではありません。チェックを外すと通常の予測に戻ります。")
+    # 🌟 2026-08-28追加の3機種はデータが少なく条件を未検証のため、+1000モードを一時的に無効化している
+    if selected_sheet in TARGET1000_PENDING_MACHINES:
+        st.info("🎯 +1000枚狙いモード：この機種はまだデータが十分に貯まっていないため、"
+                "条件を検証中です。データが溜まり次第、対応予定です。")
     else:
-        st.success(f"🎯 +1000枚狙いモード：条件（{cond_text}）を満たす {len(recommendations)}台 を表示")
+        cond_text = f"7日計 {rule_1000['7日計']}枚以下 かつ 基準日の差枚 {rule_1000['差枚']}枚以下"
+        if rule_1000['G数'] > 0:
+            cond_text += f" かつ 回転数 {rule_1000['G数']:,}以上"
+        if len(recommendations) == 0:
+            st.info(f"🎯 +1000枚狙いモード：今日は該当する台がありませんでした（条件：{cond_text}）。"
+                    "この条件は毎日出るものではありません。チェックを外すと通常の予測に戻ります。")
+        else:
+            st.success(f"🎯 +1000枚狙いモード：条件（{cond_text}）を満たす {len(recommendations)}台 を表示")
 elif len(recommendations) == 0:
     st.info("💡 今日は条件に合う台がありませんでした。サイドバーの①〜③をゆるめると候補が増えます。")
 else:
