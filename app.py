@@ -63,6 +63,26 @@ hr { border-color: #e0dff5 !important; }
     display: flex; align-items: center; gap: 8px;
 }
 .section-label::after { content: ''; flex: 1; border-top: 0.5px solid #e0dff5; }
+
+.rank-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    background: #fff; border: 0.5px solid #e0dff5; border-left: 3px solid #7c6fe0;
+    border-radius: 8px; padding: 10px 14px; margin-bottom: 6px;
+}
+.rank-row-main { font-weight: 600; }
+.rank-row-sub { color: #aaa; font-size: 0.8rem; margin-top: 2px; }
+
+.stButton > button {
+    background: #7c6fe0 !important;
+    color: #fff !important;
+    border: none !important;
+    border-radius: 8px !important;
+    font-weight: 600 !important;
+}
+.stButton > button:hover {
+    background: #5a4fcf !important;
+    color: #fff !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -103,18 +123,35 @@ TARGET1000_RULES = {
 # 🌟 +1000枚狙いモードの条件が未検証の機種（データが溜まったらここから外す）
 TARGET1000_PENDING_MACHINES = {"neoim", "girls", "funky2"}
 
-selected_machine_label = st.sidebar.selectbox("🕹️ 機種を選択", list(MACHINE_SHEET_MAP.keys()))
-selected_sheet = MACHINE_SHEET_MAP[selected_machine_label]
+# 🌟 2026-08-28追加：機種が増えたので「全機種ランキング」をトップページにし、
+#    そこから各機種の詳細ページへ移動できるようにした。
+TOP_PAGE_LABEL = "🏆 全機種ランキング"
+SELECT_OPTIONS = [TOP_PAGE_LABEL] + list(MACHINE_SHEET_MAP.keys())
+
+if "machine_select" not in st.session_state:
+    st.session_state["machine_select"] = TOP_PAGE_LABEL
+
+def _goto_machine(label):
+    # ランキングの「見る→」ボタンや「戻る」ボタンから、表示する機種を切り替えるための関数
+    st.session_state["machine_select"] = label
+
+selected_machine_label = st.sidebar.selectbox("🕹️ 機種を選択", SELECT_OPTIONS, key="machine_select")
+is_top_page = selected_machine_label == TOP_PAGE_LABEL
 st.sidebar.markdown("---")
-target_1000_mode = st.sidebar.checkbox(
-    "🎯 +1000枚狙いモード", value=False,
-    help="翌日+1000枚以上を狙える条件だけに絞り込みます。該当する台がない日もあります。")
-st.sidebar.markdown("---")
-target_7day_max = st.sidebar.slider("① 7日計の上限", min_value=-5000, max_value=2000, value=0, step=100)
-target_g_min = st.sidebar.slider("② 基準日の回転数（下限）", min_value=0, max_value=10000, value=0, step=100)
-target_diff_max = st.sidebar.slider("③ 基準日の差枚（上限）", min_value=-5000, max_value=2000, value=0, step=100)
-top_n_picks = st.sidebar.slider("④ ピックアップ台数", min_value=1, max_value=15, value=5, step=1)
-pattern_strictness = st.sidebar.slider("⑤ 波形の一致度", min_value=70, max_value=99, value=90, step=1)
+
+if is_top_page:
+    top_page_n = st.sidebar.slider("表示件数", min_value=5, max_value=30, value=15, step=5)
+else:
+    selected_sheet = MACHINE_SHEET_MAP[selected_machine_label]
+    target_1000_mode = st.sidebar.checkbox(
+        "🎯 +1000枚狙いモード", value=False,
+        help="翌日+1000枚以上を狙える条件だけに絞り込みます。該当する台がない日もあります。")
+    st.sidebar.markdown("---")
+    target_7day_max = st.sidebar.slider("① 7日計の上限", min_value=-5000, max_value=2000, value=0, step=100)
+    target_g_min = st.sidebar.slider("② 基準日の回転数（下限）", min_value=0, max_value=10000, value=0, step=100)
+    target_diff_max = st.sidebar.slider("③ 基準日の差枚（上限）", min_value=-5000, max_value=2000, value=0, step=100)
+    top_n_picks = st.sidebar.slider("④ ピックアップ台数", min_value=1, max_value=15, value=5, step=1)
+    pattern_strictness = st.sidebar.slider("⑤ 波形の一致度", min_value=70, max_value=99, value=90, step=1)
 
 # ==========================================
 # データ読み込み
@@ -186,7 +223,7 @@ FEATURES = ['G数','差枚','BB','RB','合成確率','還元日','警戒日','�
 
 @st.cache_resource(ttl=600)
 def train_models():
-    # 🌟 3機種のデータをまとめて学習（データが少ない機種の精度対策・バックテスト検証済み）
+    # 🌟 6機種のデータをまとめて学習（データが少ない機種の精度対策・バックテスト検証済み）
     all_df = pd.concat([prepare_data(s) for s in MACHINE_SHEET_MAP.values()], ignore_index=True)
     train_df = all_df.dropna(subset=['翌日の差枚'])
     # 🌟 小データ向けに複雑さを抑えたLightGBM（過学習抑制）
@@ -197,23 +234,95 @@ def train_models():
     model_beh.fit(train_df[FEATURES], train_df['翌日高設定挙動'])
     return model_win, model_beh
 
+def get_safe_latest_df(sheet_name, model_win, model_beh):
+    # 🌟 2026-08-28追加：1機種分の「予測基準日の安全な台」を作る処理を関数化。
+    #    全機種ランキング（トップページ）と機種別ページの両方から呼ぶ。
+    df_m = prepare_data(sheet_name)
+    latest_date_m = df_m['日付'].max()
+    latest_df_m = df_m[df_m['日付'] == latest_date_m].copy()
+    exclude_condition_m = (
+        (latest_df_m['差枚'] >= EXCLUDE_DIFF) |
+        (latest_df_m['1日前の差枚'] >= EXCLUDE_DIFF) |
+        (latest_df_m['2日前の差枚'] >= EXCLUDE_DIFF)
+    )
+    safe_df = latest_df_m[~exclude_condition_m].copy()
+    if len(safe_df) > 0:
+        safe_df['明日勝つ確率(%)'] = model_win.predict_proba(safe_df[FEATURES])[:, 1] * 100
+        safe_df['高設定挙動率(%)'] = model_beh.predict_proba(safe_df[FEATURES])[:, 1] * 100
+    else:
+        safe_df['明日勝つ確率(%)'] = []
+        safe_df['高設定挙動率(%)'] = []
+    return df_m, latest_date_m, safe_df
+
 with st.spinner('データを読み込み中...'):
-    df = prepare_data(selected_sheet)
     model_win, model_beh = train_models()
-    latest_date = df['日付'].max()
 
-latest_df = df[df['日付'] == latest_date].copy()
-# 🌟 除外条件（2026-08-02の検証でRB確率による除外D・Eを廃止。成績が下がり候補も減っていたため）
-exclude_condition = (
-    (latest_df['差枚'] >= EXCLUDE_DIFF) |
-    (latest_df['1日前の差枚'] >= EXCLUDE_DIFF) |
-    (latest_df['2日前の差枚'] >= EXCLUDE_DIFF)
-)
-safe_latest_df = latest_df[~exclude_condition].copy()
-safe_latest_df['明日勝つ確率(%)'] = model_win.predict_proba(safe_latest_df[FEATURES])[:, 1] * 100
-safe_latest_df['高設定挙動率(%)'] = model_beh.predict_proba(safe_latest_df[FEATURES])[:, 1] * 100
+# ==========================================
+# 🏆 トップページ：全機種ランキング
+# ==========================================
+if is_top_page:
+    st.markdown(
+        "<h1 style='text-align:center; color:#5a4fcf; font-weight:700; font-size:clamp(1.1rem,4vw,1.8rem);'>"
+        "🏆 全機種ランキング</h1>",
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        "<p style='text-align:center; color:#aaa; font-size:0.85rem; margin-top:-0.3rem;'>"
+        "6機種を横断したランキングです。気になる台の「見る →」で機種ごとの詳細ページに移動できます。</p>",
+        unsafe_allow_html=True
+    )
 
-# 🌟 3機種とも同じルール（除外条件 → 絞り込み①〜③ → 勝率順に④台）で選定する
+    all_rows = []
+    for label, sheet_name in MACHINE_SHEET_MAP.items():
+        _, _, safe_df = get_safe_latest_df(sheet_name, model_win, model_beh)
+        safe_df = safe_df.copy()
+        safe_df['機種名'] = label.replace('🎰 ', '')
+        safe_df['機種ラベル'] = label
+        all_rows.append(safe_df)
+    all_latest = pd.concat(all_rows, ignore_index=True) if all_rows else pd.DataFrame()
+
+    def render_top_ranking(data, col, label_text):
+        ranked = data.sort_values(col, ascending=False).head(top_page_n)
+        if len(ranked) == 0:
+            st.info("表示できる台がありませんでした。")
+            return
+        medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+        for rank, (_, row) in enumerate(ranked.iterrows(), 1):
+            medal = medals.get(rank, f"[{rank}]")
+            c1, c2 = st.columns([5, 1])
+            with c1:
+                st.markdown(
+                    f"<div class='rank-row'><div>"
+                    f"<div class='rank-row-main'>{medal} {row['機種名']} {int(row['台番号'])}番台 ｜ "
+                    f"{label_text} {row[col]:.1f}%</div>"
+                    f"<div class='rank-row-sub'>7日計 {int(row['7日間合計']):+} ｜ 差枚 {int(row['差枚']):+}</div>"
+                    f"</div></div>",
+                    unsafe_allow_html=True
+                )
+            with c2:
+                st.button(
+                    "見る →",
+                    key=f"goto_{col}_{row['機種ラベル']}_{int(row['台番号'])}",
+                    on_click=_goto_machine, args=(row['機種ラベル'],)
+                )
+
+    tab_win, tab_beh = st.tabs(["🏆 勝率ランキング", "🔥 高設定予想ランキング"])
+    with tab_win:
+        render_top_ranking(all_latest, '明日勝つ確率(%)', "勝率")
+    with tab_beh:
+        render_top_ranking(all_latest, '高設定挙動率(%)', "高設定挙動率")
+
+    st.stop()
+
+# ==========================================
+# 🎰 機種別ページ
+# ==========================================
+st.button("← 全機種ランキングに戻る", on_click=_goto_machine, args=(TOP_PAGE_LABEL,))
+
+with st.spinner('データを読み込み中...'):
+    df, latest_date, safe_latest_df = get_safe_latest_df(selected_sheet, model_win, model_beh)
+
+# 🌟 6機種とも同じルール（除外条件 → 絞り込み①〜③ → 勝率順に④台）で選定する
 recommendations = safe_latest_df.sort_values('明日勝つ確率(%)', ascending=False)
 recommendations = recommendations[
     (recommendations['7日間合計'] <= target_7day_max) &
@@ -503,7 +612,7 @@ if not high_setting_days.empty:
                     y=alt.Y('累積差枚:Q', axis=no_axis),
                     color=alt.Color('種別:N', scale=color_scale, legend=None)
                 )
-                
+
                 # 🌟 変更：.resolve_scale(y='independent') を削除し、Y軸のスケールを共通化
                 chart = alt.layer(bars_chart, zero_line, lines_chart, points_chart).properties(height=260)
                 st.altair_chart(chart, use_container_width=True)
