@@ -281,36 +281,70 @@ if is_top_page:
         all_rows.append(safe_df)
     all_latest = pd.concat(all_rows, ignore_index=True) if all_rows else pd.DataFrame()
 
-    def render_top_ranking(data, col, label_text):
+    def render_rank_row(rank, row, sub_text, key_prefix):
+        medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+        medal = medals.get(rank, f"[{rank}]")
+        c1, c2 = st.columns([5, 1])
+        with c1:
+            st.markdown(
+                f"<div class='rank-row'><div>"
+                f"<div class='rank-row-main'>{medal} {row['機種名']} {int(row['台番号'])}番台</div>"
+                f"<div class='rank-row-sub'>{sub_text}</div>"
+                f"</div></div>",
+                unsafe_allow_html=True
+            )
+        with c2:
+            st.button(
+                "見る →",
+                key=f"{key_prefix}_{row['機種ラベル']}_{int(row['台番号'])}",
+                on_click=_goto_machine, args=(row['機種ラベル'],)
+            )
+
+    def render_top_ranking(data, col, label_text, key_prefix):
         ranked = data.sort_values(col, ascending=False).head(top_page_n)
         if len(ranked) == 0:
             st.info("表示できる台がありませんでした。")
             return
-        medals = {1: "🥇", 2: "🥈", 3: "🥉"}
         for rank, (_, row) in enumerate(ranked.iterrows(), 1):
-            medal = medals.get(rank, f"[{rank}]")
-            c1, c2 = st.columns([5, 1])
-            with c1:
-                st.markdown(
-                    f"<div class='rank-row'><div>"
-                    f"<div class='rank-row-main'>{medal} {row['機種名']} {int(row['台番号'])}番台 ｜ "
-                    f"{label_text} {row[col]:.1f}%</div>"
-                    f"<div class='rank-row-sub'>7日計 {int(row['7日間合計']):+} ｜ 差枚 {int(row['差枚']):+}</div>"
-                    f"</div></div>",
-                    unsafe_allow_html=True
-                )
-            with c2:
-                st.button(
-                    "見る →",
-                    key=f"goto_{col}_{row['機種ラベル']}_{int(row['台番号'])}",
-                    on_click=_goto_machine, args=(row['機種ラベル'],)
-                )
+            sub_text = (
+                f"{label_text} {row[col]:.1f}% ｜ "
+                f"7日計 {int(row['7日間合計']):+} ｜ 差枚 {int(row['差枚']):+}"
+            )
+            render_rank_row(rank, row, sub_text, key_prefix)
 
-    tab_win, tab_beh = st.tabs(["🏆 勝率ランキング", "🔥 高設定予想ランキング"])
+    tab_win, tab_beh, tab_both = st.tabs(["🏆 勝率ランキング", "🔥 高設定予想ランキング", "⭐ Wランクイン"])
     with tab_win:
-        render_top_ranking(all_latest, '明日勝つ確率(%)', "勝率")
+        render_top_ranking(all_latest, '明日勝つ確率(%)', "勝率", "goto_win")
     with tab_beh:
-        render_top_ranking(all_latest, '高設定挙動率(%)', "高設定挙動率")
+        render_top_ranking(all_latest, '高設定挙動率(%)', "高設定挙動率", "goto_beh")
+    with tab_both:
+        # 🌟 2026-08-28追加：勝率・高設定挙動率どちらのランキングにも入っている台は
+        #    まぐれの可能性が低く再現性が高いと考えられるため、まとめて見られるようにした
+        st.markdown(
+            "<p style='color:#aaa; font-size:0.85rem; margin-bottom:0.5rem;'>"
+            "勝率ランキングと高設定予想ランキングの両方に入っている台です。"
+            "片方だけの台よりまぐれの可能性が低く、再現性が高いと考えられます。</p>",
+            unsafe_allow_html=True
+        )
+        win_top = all_latest.sort_values('明日勝つ確率(%)', ascending=False).head(top_page_n)
+        beh_top = all_latest.sort_values('高設定挙動率(%)', ascending=False).head(top_page_n)
+        win_keys = set(zip(win_top['機種ラベル'], win_top['台番号']))
+        beh_keys = set(zip(beh_top['機種ラベル'], beh_top['台番号']))
+        both_keys = win_keys & beh_keys
+        both_df = all_latest[
+            all_latest.apply(lambda r: (r['機種ラベル'], r['台番号']) in both_keys, axis=1)
+        ].sort_values('明日勝つ確率(%)', ascending=False)
+
+        if len(both_df) == 0:
+            st.info("今日は両方のランキングに入っている台がありませんでした。"
+                    "サイドバーの表示件数を増やすと見つかりやすくなります。")
+        else:
+            for rank, (_, row) in enumerate(both_df.iterrows(), 1):
+                sub_text = (
+                    f"勝率 {row['明日勝つ確率(%)']:.1f}% ｜ 高設定挙動率 {row['高設定挙動率(%)']:.1f}% ｜ "
+                    f"7日計 {int(row['7日間合計']):+} ｜ 差枚 {int(row['差枚']):+}"
+                )
+                render_rank_row(rank, row, sub_text, "goto_both")
 
     st.stop()
 
