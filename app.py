@@ -312,7 +312,8 @@ if is_top_page:
             )
             render_rank_row(rank, row, sub_text, key_prefix)
 
-    tab_win, tab_beh, tab_both = st.tabs(["🏆 勝率ランキング", "🔥 高設定予想ランキング", "⭐ Wランクイン"])
+    # 🌟 2026-10-26変更：再現性が高い「Wランクイン」を最初（一番左）のタブにした
+    tab_both, tab_win, tab_beh = st.tabs(["⭐ Wランクイン", "🏆 勝率ランキング", "🔥 高設定予想ランキング"])
     with tab_win:
         render_top_ranking(all_latest, '明日勝つ確率(%)', "勝率", "goto_win")
     with tab_beh:
