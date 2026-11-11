@@ -1,2 +1,9 @@
+# 🌟 2026-10-26追加：画面はいつも明るい配色にする。
+#    Mac がダークモードだと Streamlit が暗い配色に切り替わり、自前の明るい背景（app.py の <style>）と混ざって
+#    機種選択の欄が黒くなる・タブの文字が見えなくなるため（Bantō の内蔵ブラウザで発生）
 [theme]
-base="light"
+base = "light"
+primaryColor = "#7c6fe0"
+backgroundColor = "#f8f8fc"
+secondaryBackgroundColor = "#f0eeff"
+textColor = "#1a1a2e"
